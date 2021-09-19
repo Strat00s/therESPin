@@ -1,86 +1,245 @@
-#include <Arduino.h>
-#include <U8g2lib.h>
-#include <U8x8lib.h>
-#include <SPI.h>
-#include <esp32-hal-cpu.h>
-#include <math.h>
-#include <Tone32.h>
-#include "analogWrite.h"
+#include <stdio.h>
+#include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_spi_flash.h"
+#include "esp_err.h"
+#include "esp_log.h"
+#include "esp_partition.h"
+#include "driver/i2s.h"
+#include "driver/adc.h"
+#include "audio_example_file.h"
+#include "esp_adc_cal.h"
+#include <driver/i2s.h>
 
-#define ECHO 36
-#define TRIG 39
-#define SPEED_OF_SOUND 343.0 //m/s
+static const char* TAG = "ad/da";
+#define V_REF   1100
+#define ADC1_TEST_CHANNEL (ADC1_CHANNEL_7)
 
-#define LCD_HEIGHT 64
-#define LCD_WIDTH 168
+#define PARTITION_NAME   "storage"
 
-#define BUZZER_PIN 16
+/*---------------------------------------------------------------
+                            EXAMPLE CONFIG
+---------------------------------------------------------------*/
+//enable record sound and save in flash
+#define RECORD_IN_FLASH_EN        0
+//enable replay recorded sound in flash
+#define REPLAY_FROM_FLASH_EN      0
 
-U8X8_SSD1306_128X64_NONAME_HW_I2C u8x8(U8X8_PIN_NONE);
+//i2s number
+#define EXAMPLE_I2S_NUM           0
+//i2s sample rate
+#define EXAMPLE_I2S_SAMPLE_RATE   16000
+//i2s data bits
+#define EXAMPLE_I2S_SAMPLE_BITS   16
+//enable display buffer for debug
+#define EXAMPLE_I2S_BUF_DEBUG     0
+//I2S read buffer length
+#define EXAMPLE_I2S_READ_LEN      16 * 1024
+//I2S data format
+#define EXAMPLE_I2S_FORMAT        I2S_CHANNEL_FMT_RIGHT_LEFT
+//I2S channel number
+#define EXAMPLE_I2S_CHANNEL_NUM   ((EXAMPLE_I2S_FORMAT < I2S_CHANNEL_FMT_ONLY_RIGHT) ? (2) : (1))
+//I2S built-in ADC unit
+#define I2S_ADC_UNIT              ADC_UNIT_1
+//I2S built-in ADC channel
+#define I2S_ADC_CHANNEL           ADC1_CHANNEL_0
 
-unsigned long getTravelTime(int trig, int echo) {
-    digitalWrite(trig, HIGH);
-    delayMicroseconds(10);
-    digitalWrite(trig, LOW);
-
-    return pulseIn(echo, HIGH);
-}
-
-void setup(void) {
-    Serial.begin(115200);
-    Serial.printf("\nStarting\n");
-    Serial.printf("Frequency: %d\n", getCpuFrequencyMhz());
-    
-    u8x8.begin();
-    u8x8.setPowerSave(0);
-    u8x8.setFont(u8x8_font_chroma48medium8_r);
-
-    pinMode(TRIG, OUTPUT);
-    pinMode(ECHO, INPUT);
-    digitalWrite(TRIG, LOW);
-    analogWriteResolution(LED_BUILTIN, 1);
-}
+//flash record size, for recording 5 seconds' data
+#define FLASH_RECORD_SIZE         (EXAMPLE_I2S_CHANNEL_NUM * EXAMPLE_I2S_SAMPLE_RATE * EXAMPLE_I2S_SAMPLE_BITS / 8 * 5)
+#define FLASH_ERASE_SIZE          (FLASH_RECORD_SIZE % FLASH_SECTOR_SIZE == 0) ? FLASH_RECORD_SIZE : FLASH_RECORD_SIZE + (FLASH_SECTOR_SIZE - FLASH_RECORD_SIZE % FLASH_SECTOR_SIZE)
+//sector size of flash
+#define FLASH_SECTOR_SIZE         0x1000
+//flash read / write address
+#define FLASH_ADDR                0x200000
 
 
-void loop(void) {
-    unsigned long travel_time = getTravelTime(TRIG, ECHO);
-    float distance = travel_time / 2 * (SPEED_OF_SOUND / 10000);
-    u8x8.setCursor(0, 1);
-    u8x8.printf("Travel time:\n");
-    u8x8.printf("%lu\n", travel_time);
-    u8x8.printf("Distance:\n");
-    u8x8.printf("%.2fcm  \n", distance);
-    u8x8.refreshDisplay();
-
-    if (distance > 5.0 && distance < 20.0) {
-        long position = (distance - 5) * 100;
-        long frequency = map(position, 500, 2000, 500, 1000);
-        u8x8.printf("Freq: %ld\n", frequency);
-
-        Serial.println(analogWrite(16, 50, (float)frequency));
-    }
-    else {
-        u8x8.clearLine(5);
-    }
-}
+/**
+ * @brief I2S ADC/DAC mode init.
+ */
 
 /*
-#include "analogWrite.h"
-#define LED_BUILTIN 2
-
-int brightness = 0;
-int step = 1;
-
-void setup() {
-  Serial.begin(115200);
-  analogWriteResolution(LED_BUILTIN, 10);
+ * @brief erase flash for recording
+ */
+void example_erase_flash(void)
+{
+#if RECORD_IN_FLASH_EN
+    printf("Erasing flash \n");
+    const esp_partition_t *data_partition = NULL;
+    data_partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
+            ESP_PARTITION_SUBTYPE_DATA_FAT, PARTITION_NAME);
+    if (data_partition != NULL) {
+        printf("partiton addr: 0x%08x; size: %d; label: %s\n", data_partition->address, data_partition->size, data_partition->label);
+    }
+    printf("Erase size: %d Bytes\n", FLASH_ERASE_SIZE);
+    ESP_ERROR_CHECK(esp_partition_erase_range(data_partition, 0, FLASH_ERASE_SIZE));
+#else
+    printf("Skip flash erasing...\n");
+#endif
 }
 
-void loop() {
-  analogWrite(LED_BUILTIN, brightness);
-  brightness += step;
-  if ( brightness >= 1023) step = -1;
-  if ( brightness <= 0) step = 1;
-  delay(1)
+/**
+ * @brief debug buffer data
+ */
+void example_disp_buf(uint8_t* buf, int length)
+{
+#if EXAMPLE_I2S_BUF_DEBUG
+    printf("======\n");
+    for (int i = 0; i < length; i++) {
+        printf("%02x ", buf[i]);
+        if ((i + 1) % 8 == 0) {
+            printf("\n");
+        }
+    }
+    printf("======\n");
+#endif
 }
-*/
+
+/**
+ * @brief Reset i2s clock and mode
+ */
+void example_reset_play_mode(void)
+{
+    i2s_set_clk((i2s_port_t)(EXAMPLE_I2S_NUM), EXAMPLE_I2S_SAMPLE_RATE, (i2s_bits_per_sample_t)(EXAMPLE_I2S_SAMPLE_BITS), (i2s_channel_t)(EXAMPLE_I2S_CHANNEL_NUM));
+}
+
+/**
+ * @brief Set i2s clock for example audio file
+ */
+void example_set_file_play_mode(void)
+{
+    i2s_set_clk((i2s_port_t)(EXAMPLE_I2S_NUM), 16000, (i2s_bits_per_sample_t)(EXAMPLE_I2S_SAMPLE_BITS), (i2s_channel_t)1);
+}
+
+/**
+ * @brief Scale data to 16bit/32bit for I2S DMA output.
+ *        DAC can only output 8bit data value.
+ *        I2S DMA will still send 16 bit or 32bit data, the highest 8bit contains DAC data.
+ */
+int example_i2s_dac_data_scale(uint8_t* d_buff, uint8_t* s_buff, uint32_t len)
+{
+    uint32_t j = 0;
+#if (EXAMPLE_I2S_SAMPLE_BITS == 16)
+    for (int i = 0; i < len; i++) {
+        d_buff[j++] = 0;
+        d_buff[j++] = s_buff[i];
+    }
+    return (len * 2);
+#else
+    for (int i = 0; i < len; i++) {
+        d_buff[j++] = 0;
+        d_buff[j++] = 0;
+        d_buff[j++] = 0;
+        d_buff[j++] = s_buff[i];
+    }
+    return (len * 4);
+#endif
+}
+
+/**
+ * @brief Scale data to 8bit for data from ADC.
+ *        Data from ADC are 12bit width by default.
+ *        DAC can only output 8 bit data.
+ *        Scale each 12bit ADC data to 8bit DAC data.
+ */
+void example_i2s_adc_data_scale(uint8_t * d_buff, uint8_t* s_buff, uint32_t len)
+{
+    uint32_t j = 0;
+    uint32_t dac_value = 0;
+#if (EXAMPLE_I2S_SAMPLE_BITS == 16)
+    for (int i = 0; i < len; i += 2) {
+        dac_value = ((((uint16_t) (s_buff[i + 1] & 0xf) << 8) | ((s_buff[i + 0]))));
+        d_buff[j++] = 0;
+        d_buff[j++] = dac_value * 256 / 4096;
+    }
+#else
+    for (int i = 0; i < len; i += 4) {
+        dac_value = ((((uint16_t)(s_buff[i + 3] & 0xf) << 8) | ((s_buff[i + 2]))));
+        d_buff[j++] = 0;
+        d_buff[j++] = 0;
+        d_buff[j++] = 0;
+        d_buff[j++] = dac_value * 256 / 4096;
+    }
+#endif
+}
+
+/**
+ * @brief I2S ADC/DAC example
+ *        1. Erase flash
+ *        2. Record audio from ADC and save in flash
+ *        3. Read flash and replay the sound via DAC
+ *        4. Play an example audio file(file format: 8bit/8khz/single channel)
+ *        5. Loop back to step 3
+ */
+void example_i2s_adc_dac(void*arg)
+{
+
+    int i2s_read_len = EXAMPLE_I2S_READ_LEN;
+    int flash_wr_size = 0;
+    size_t bytes_read, bytes_written;
+
+    uint8_t* flash_read_buff = (uint8_t*) calloc(i2s_read_len, sizeof(char));
+    uint8_t* i2s_write_buff = (uint8_t*) calloc(i2s_read_len, sizeof(char));
+    while (1) {
+        //4. Play an example audio file(file format: 8bit/16khz/single channel)
+        printf("Playing file example: \n");
+        int offset = 0;
+        int tot_size = sizeof(audio_table);
+        example_set_file_play_mode();
+        while (offset < tot_size) {
+            int play_len = ((tot_size - offset) > (4 * 1024)) ? (4 * 1024) : (tot_size - offset);
+            int i2s_wr_len = example_i2s_dac_data_scale(i2s_write_buff, (uint8_t*)(audio_table + offset), play_len);
+            i2s_write((i2s_port_t)EXAMPLE_I2S_NUM, i2s_write_buff, i2s_wr_len, &bytes_written, portMAX_DELAY);
+            offset += play_len;
+            example_disp_buf((uint8_t*) i2s_write_buff, 32);
+        }
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+        example_reset_play_mode();
+    }
+    free(flash_read_buff);
+    free(i2s_write_buff);
+    vTaskDelete(NULL);
+}
+
+void adc_read_task(void* arg)
+{
+    adc1_config_width(ADC_WIDTH_12Bit);
+    adc1_config_channel_atten(ADC1_TEST_CHANNEL, ADC_ATTEN_11db);
+    esp_adc_cal_characteristics_t characteristics;
+    esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_11, ADC_WIDTH_BIT_12, V_REF, &characteristics);
+    while(1) {
+        uint32_t voltage;
+        esp_adc_cal_get_voltage(/*ADC1_TEST_CHANNEL*/ ADC_CHANNEL_7, &characteristics, &voltage);
+        ESP_LOGI(TAG, "%d mV", voltage);
+        vTaskDelay(200 / portTICK_RATE_MS);
+    }
+}
+
+
+void setup(void) {
+    int i2s_num = EXAMPLE_I2S_NUM;
+    i2s_config_t i2s_config = {
+       .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX | I2S_MODE_TX | I2S_MODE_DAC_BUILT_IN | I2S_MODE_ADC_BUILT_IN),
+       .sample_rate =  EXAMPLE_I2S_SAMPLE_RATE,
+       .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+       .channel_format = EXAMPLE_I2S_FORMAT,
+       .communication_format = I2S_COMM_FORMAT_I2S_MSB,
+       .intr_alloc_flags = 0,
+       .dma_buf_count = 2,
+       .dma_buf_len = 1024,
+       .use_apll = 1
+    };
+    //install and start i2s driver
+    i2s_driver_install((i2s_port_t)(i2s_num), &i2s_config, 0, NULL);
+    //init DAC pad
+    i2s_set_dac_mode(I2S_DAC_CHANNEL_BOTH_EN);
+    //init ADC pad
+    i2s_set_adc_mode(I2S_ADC_UNIT, I2S_ADC_CHANNEL);
+    
+    esp_log_level_set("I2S", ESP_LOG_INFO);
+    xTaskCreate(example_i2s_adc_dac, "example_i2s_adc_dac", 1024 * 2, NULL, 5, NULL);
+    xTaskCreate(adc_read_task, "ADC read task", 2048, NULL, 5, NULL);
+}
+
+void loop(void) {
+}
