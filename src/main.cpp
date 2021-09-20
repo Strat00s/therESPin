@@ -1,4 +1,5 @@
-#include <stdio.h>
+
+/*#include <stdio.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -11,6 +12,7 @@
 #include "audio_example_file.h"
 #include "esp_adc_cal.h"
 #include <driver/i2s.h>
+#include <math.h>
 
 static const char* TAG = "ad/da";
 #define V_REF   1100
@@ -18,9 +20,6 @@ static const char* TAG = "ad/da";
 
 #define PARTITION_NAME   "storage"
 
-/*---------------------------------------------------------------
-                            EXAMPLE CONFIG
----------------------------------------------------------------*/
 //enable record sound and save in flash
 #define RECORD_IN_FLASH_EN        0
 //enable replay recorded sound in flash
@@ -54,13 +53,8 @@ static const char* TAG = "ad/da";
 #define FLASH_ADDR                0x200000
 
 
-/**
- * @brief I2S ADC/DAC mode init.
- */
+// @brief I2S ADC/DAC mode init.
 
-/*
- * @brief erase flash for recording
- */
 void example_erase_flash(void)
 {
 #if RECORD_IN_FLASH_EN
@@ -78,9 +72,8 @@ void example_erase_flash(void)
 #endif
 }
 
-/**
- * @brief debug buffer data
- */
+// @brief debug buffer data
+
 void example_disp_buf(uint8_t* buf, int length)
 {
 #if EXAMPLE_I2S_BUF_DEBUG
@@ -95,27 +88,27 @@ void example_disp_buf(uint8_t* buf, int length)
 #endif
 }
 
-/**
- * @brief Reset i2s clock and mode
- */
+
+// @brief Reset i2s clock and mode
+
 void example_reset_play_mode(void)
 {
     i2s_set_clk((i2s_port_t)(EXAMPLE_I2S_NUM), EXAMPLE_I2S_SAMPLE_RATE, (i2s_bits_per_sample_t)(EXAMPLE_I2S_SAMPLE_BITS), (i2s_channel_t)(EXAMPLE_I2S_CHANNEL_NUM));
 }
 
-/**
- * @brief Set i2s clock for example audio file
- */
+
+// @brief Set i2s clock for example audio file
+
 void example_set_file_play_mode(void)
 {
     i2s_set_clk((i2s_port_t)(EXAMPLE_I2S_NUM), 16000, (i2s_bits_per_sample_t)(EXAMPLE_I2S_SAMPLE_BITS), (i2s_channel_t)1);
 }
 
-/**
- * @brief Scale data to 16bit/32bit for I2S DMA output.
- *        DAC can only output 8bit data value.
- *        I2S DMA will still send 16 bit or 32bit data, the highest 8bit contains DAC data.
- */
+
+// @brief Scale data to 16bit/32bit for I2S DMA output.
+//        DAC can only output 8bit data value.
+//        I2S DMA will still send 16 bit or 32bit data, the highest 8bit contains DAC data.
+
 int example_i2s_dac_data_scale(uint8_t* d_buff, uint8_t* s_buff, uint32_t len)
 {
     uint32_t j = 0;
@@ -136,12 +129,12 @@ int example_i2s_dac_data_scale(uint8_t* d_buff, uint8_t* s_buff, uint32_t len)
 #endif
 }
 
-/**
- * @brief Scale data to 8bit for data from ADC.
- *        Data from ADC are 12bit width by default.
- *        DAC can only output 8 bit data.
- *        Scale each 12bit ADC data to 8bit DAC data.
- */
+
+// @brief Scale data to 8bit for data from ADC.
+//        Data from ADC are 12bit width by default.
+//        DAC can only output 8 bit data.
+//        Scale each 12bit ADC data to 8bit DAC data.
+
 void example_i2s_adc_data_scale(uint8_t * d_buff, uint8_t* s_buff, uint32_t len)
 {
     uint32_t j = 0;
@@ -163,14 +156,14 @@ void example_i2s_adc_data_scale(uint8_t * d_buff, uint8_t* s_buff, uint32_t len)
 #endif
 }
 
-/**
- * @brief I2S ADC/DAC example
- *        1. Erase flash
- *        2. Record audio from ADC and save in flash
- *        3. Read flash and replay the sound via DAC
- *        4. Play an example audio file(file format: 8bit/8khz/single channel)
- *        5. Loop back to step 3
- */
+
+// @brief I2S ADC/DAC example
+////        1. Erase flash
+////        2. Record audio from ADC and save in flash
+////        3. Read flash and replay the sound via DAC
+//        4. Play an example audio file(file format: 8bit/8khz/single channel)
+//        5. Loop back to step 3
+
 void example_i2s_adc_dac(void*arg)
 {
 
@@ -209,7 +202,7 @@ void adc_read_task(void* arg)
     esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_11, ADC_WIDTH_BIT_12, V_REF, &characteristics);
     while(1) {
         uint32_t voltage;
-        esp_adc_cal_get_voltage(/*ADC1_TEST_CHANNEL*/ ADC_CHANNEL_7, &characteristics, &voltage);
+        esp_adc_cal_get_voltage( ADC_CHANNEL_7, &characteristics, &voltage);
         ESP_LOGI(TAG, "%d mV", voltage);
         vTaskDelay(200 / portTICK_RATE_MS);
     }
@@ -238,8 +231,121 @@ void setup(void) {
     
     esp_log_level_set("I2S", ESP_LOG_INFO);
     xTaskCreate(example_i2s_adc_dac, "example_i2s_adc_dac", 1024 * 2, NULL, 5, NULL);
-    xTaskCreate(adc_read_task, "ADC read task", 2048, NULL, 5, NULL);
+    //xTaskCreate(adc_read_task, "ADC read task", 2048, NULL, 5, NULL);
 }
 
 void loop(void) {
+}
+*/
+
+/* I2S Example
+    This example code will output 100Hz sine wave and triangle wave to 2-channel of I2S driver
+    Every 5 seconds, it will change bits_per_sample [16, 24, 32] for i2s data
+    This example code is in the Public Domain (or CC0 licensed, at your option.)
+    Unless required by applicable law or agreed to in writing, this
+    software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+    CONDITIONS OF ANY KIND, either express or implied.
+*/
+
+#include <Arduino.h>
+#include <stdio.h>
+#include <math.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/queue.h"
+#include "driver/i2s.h"
+#include "driver/gpio.h"
+#include "ESP32Encoder.h"
+
+
+#define SAMPLE_RATE     44100
+#define I2S_NUM         0
+#define SAMPLE_PER_CYCLE(x) (SAMPLE_RATE/(int)(x))
+
+#define WAVE_TABLE_SIZE 1024
+
+#define MIN_FREQ 65.41      //C2
+#define MAX_FREQ 3951.07    //B7
+#define MIN_VOL 0
+#define MAX_VOL 100
+
+int32_t sine[WAVE_TABLE_SIZE]     = {0};
+int32_t sawtooth[WAVE_TABLE_SIZE] = {0};
+int32_t triangle[WAVE_TABLE_SIZE] = {0};
+int32_t square[WAVE_TABLE_SIZE]   = {0};
+
+ESP32Encoder encoder;
+
+struct dataStruct{
+    float frequency;
+    int amplitude;
+};
+
+dataStruct data;
+
+void generateSine(int32_t amplitude, int32_t* buffer, uint16_t length) {
+  // Generate a sine wave signal with the provided amplitude and store it in
+  // the provided buffer of size length.
+  for (int i = 0; i < length; i++) {
+    buffer[i] = int32_t((float)(amplitude) * sin(TWO_PI * (1.0 / length) * i));
+  }
+}
+
+void playWave(int32_t* buffer, uint16_t length, float frequency, float seconds) {
+    uint32_t iterations = seconds * SAMPLE_RATE;
+    float delta = (frequency * length) / (float)SAMPLE_RATE;
+    i2s_set_clk((i2s_port_t)I2S_NUM, SAMPLE_RATE, I2S_BITS_PER_SAMPLE_16BIT, (i2s_channel_t)2);
+    for (uint32_t i = 0; i < iterations; i++) {
+        uint16_t pos = uint32_t(i * delta) % length;
+        int32_t sample = buffer[pos];
+        // Duplicate the sample so it's sent to both the left and right channel.
+        // It appears the order is right channel, left channel if you want to write
+        // stereo sound.
+        size_t i2s_bytes_write;
+        i2s_write((i2s_port_t)I2S_NUM, &sample, sizeof(sample), &i2s_bytes_write, 100);
+        //printf("Wanted %d vs Writen: %d\n", sizeof(sample), i2s_bytes_write);
+    }
+}
+
+void setup(void) {
+    encoder.attachSingleEdge(36, 39);
+    encoder.setFilter(1023);
+    encoder.clearCount();
+    encoder.setCount(1);
+
+    i2s_config_t i2s_config = {
+        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX | I2S_MODE_DAC_BUILT_IN),
+        .sample_rate = SAMPLE_RATE,
+        .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+        .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
+        .communication_format = I2S_COMM_FORMAT_I2S_MSB,
+        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,                                //Interrupt level 1
+        .dma_buf_count = 10,
+        .dma_buf_len = 70,
+        .use_apll = false,
+    };
+    i2s_driver_install((i2s_port_t)I2S_NUM, &i2s_config, 0, NULL);
+    i2s_set_dac_mode(I2S_DAC_CHANNEL_BOTH_EN);
+
+    data.frequency = MIN_FREQ;
+    data.amplitude = 50;
+
+    generateSine(data.amplitude, sine, WAVE_TABLE_SIZE);
+}
+
+int test_bits = 16;
+int enc_old = 0;
+
+void loop(void) {
+    int enc_val = encoder.getCount();
+    if (enc_val < 1) enc_val = 1;
+    if (enc_val > 84) enc_val = 84;
+    encoder.setCount(enc_val);
+
+    if (enc_old != enc_val) {
+        data.frequency = (float)(map(enc_val, 1, 84, MIN_FREQ * 100, MAX_FREQ * 100)) / 100.0;
+        enc_old = enc_val;
+        printf("Frequency: %f | Samples per cycle: %d\n", data.frequency, SAMPLE_RATE/(int)data.frequency);
+    }
+    playWave(sine, WAVE_TABLE_SIZE, data.frequency, 0.1);
 }
