@@ -15,7 +15,7 @@ int main() {
     float f_triangle[TABLE_SIZE] = {0.0};
 
     //50% skew = triangle wave; 0% = sawtooth; 100% = inverted sawtooth
-    int skew = 0;
+    int skew = 50;
     //triangle wave: rest -> peak -> rest -> trough -> rest; here: start -> peak -> trough -> end
     int t_start_index = 0;
     int t_peak_index = (0 * skew + (TABLE_SIZE / 2) * (MAX_SKEW - skew)) / MAX_SKEW;
@@ -27,22 +27,12 @@ int main() {
     
     printf("dT,category,format,val\n");
     
-    for (int i = t_start_index; i < t_start_index; i++) {
-        f_triangle[i] = (rise_delta * i);
-    }
-    for (int i = t_peak_index; i < t_trough_index; i++) {
-        f_triangle[i] = (AMPLITUDE - fall_delta * (i - t_peak_index));
-    }
-    for (int i = t_trough_index; i < t_end_index; i++) {
-        f_triangle[i] = (-AMPLITUDE + rise_delta * (i - t_trough_index));
-    }
-
     for (int i = 0; i < TABLE_SIZE; i++) {
         //sine wave
         f_sine[i] = (float)(AMPLITUDE * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * i));
         sine[i] = (int)f_sine[i];
 
-        //square wave and sawtooth
+        //square
         if (i < TABLE_SIZE / 2) {
             f_square[i] = AMPLITUDE;
             square[i] = (int)AMPLITUDE;
@@ -52,15 +42,28 @@ int main() {
             square[i] = (int)-AMPLITUDE;
         }
 
-        //printf("%d,sine,0,%d\n", i, sine[i]);
-        //printf("%d,f_sine,1,%f\n", i, f_sine[i]);
-        //printf("%d,square,2,%d\n", i, square[i]);
-        //printf("%d,f_square,3,%f\n", i, f_square[i]);
-        //printf("%d,triangle,4,%d\n", i, triangle[i]);
-        //printf("%d,f_triangle,red,%f\n", i, f_triangle[i]);
-        //printf("%d,sawtooth,6,%d\n", i, sawtooth[i]);
-        //printf("%d,f_sawtooth,green,%f\n", i, f_sawtooth[i]);
-        //printf("%d,sawtooth_skew,8,%d\n", i, sawtooth_skew[i]);
-        //printf("%d,f_sawtooth_skew,blue,%f\n", i, f_sawtooth_skew[i]);
+        //triangle
+        if (i < t_peak_index) {
+            f_triangle[i] = (rise_delta * i);
+        }
+        else if (i < t_trough_index) {
+            f_triangle[i] = (AMPLITUDE - fall_delta * (i - t_peak_index));
+        }
+        else {
+            f_triangle[i] = (-AMPLITUDE + rise_delta * (i - t_trough_index));
+        }
+        printf("%d,f_sine,red,%f\n", i, f_sine[i]);
+        printf("%d,f_square,green,%f\n", i, f_square[i]);
+        printf("%d,f_triangle,blue,%f\n", i, f_triangle[i]);
     }
+
+    //for (int i = t_start_index; i < t_peak_index; i++) {
+    //    f_triangle[i] = (rise_delta * i);
+    //}
+    //for (int i = t_peak_index; i < t_trough_index; i++) {
+    //    f_triangle[i] = (AMPLITUDE - fall_delta * (i - t_peak_index));
+    //}
+    //for (int i = t_trough_index; i < t_end_index; i++) {
+    //    f_triangle[i] = (-AMPLITUDE + rise_delta * (i - t_trough_index));
+    //}
 }
