@@ -43,6 +43,32 @@ int old_skew = 0;
 int enc_val = 0;
 int old_enc = 0;
 
+
+void playWave(int32_t* buffer, uint16_t length, float frequency, float seconds) {
+    // Play back the provided waveform buffer for the specified
+    // amount of seconds.
+    // First calculate how many samples need to play back to run
+    // for the desired amount of seconds.
+    uint32_t iterations = seconds * SAMPLE_RATE;
+    // Then calculate the 'speed' at which we move through the wave
+    // buffer based on the frequency of the tone being played.
+    float delta = (frequency*length)/float(SAMPLE_RATE);
+    // Now loop through all the samples and play them, calculating the
+    // position within the wave buffer for each moment in time.
+    i2s_set_clk(I2S_NUM_0, SAMPLE_RATE, I2S_BITS_PER_SAMPLE_16BIT, (i2s_channel_t)2);
+    size_t i2s_bytes_write;
+    for (uint32_t i=0; i<iterations; ++i) {
+        uint16_t pos = uint32_t(i*delta) % length;
+        int32_t sample = buffer[pos];
+        // Duplicate the sample so it's sent to both the left and right channel.
+        // It appears the order is right channel, left channel if you want to write
+        // stereo sound.
+        //i2s.write(sample, sample);
+        i2s_write(I2S_NUM_0, &sample, sizeof(sample), &i2s_bytes_write, 1);
+        //printf("%d\n", sample);
+    }
+}
+
 //main task for "playing" waves
 void playTask(void *params) {
     //triangle config
@@ -127,6 +153,77 @@ void playTask(void *params) {
 }
 
 void setup(void) {
+
+    /*Mario
+    int32_t square[TABLE_SIZE] = {0};
+    for (int i = 0; i < TABLE_SIZE; i++) {
+        if (i < TABLE_SIZE/2) square[i] = (int32_t)AMPLITUDE;
+        else square[i] = (int32_t)(-AMPLITUDE);
+    }
+    i2s_config_t i2s_config = {
+        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX | I2S_MODE_DAC_BUILT_IN),
+        .sample_rate = SAMPLE_RATE,
+        .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+        .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
+        .communication_format = I2S_COMM_FORMAT_I2S_MSB,
+        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
+        .dma_buf_count = 8,
+        .dma_buf_len = 256,
+        .use_apll = false,
+    };
+    i2s_driver_install(I2S_NUM_0, &i2s_config, 0, NULL);
+    i2s_set_dac_mode(I2S_DAC_CHANNEL_BOTH_EN);
+    i2s_set_clk(I2S_NUM_0, SAMPLE_RATE, I2S_BITS_PER_SAMPLE_16BIT, (i2s_channel_t)2);
+
+    generateSquare();
+    float mario_notes[] = {261.63, 311.13, 349.23, 369.99,
+        261.63, 261.63, 311.13, 329.63, 349.23, 349.23, 415.30, 440.00,
+        261.63, 261.63, 311.13, 329.63, 349.23, 349.23, 415.30, 440.00,
+        311.13, 329.63, 311.13, 329.63, 293.66, 261.63, 220.00, 261.63,
+                261.63, 311.13, 293.66, 261.63, 220.00, 261.63,
+        311.13, 329.63, 311.13, 329.63, 293.66, 261.63, 220.00, 261.63,
+                261.63, 311.13, 293.66, 261.63, 220.00, 261.63, 
+        392.00, 392.00, 440.00, 466.16, 493.88, 392.00, 392.00,
+        349.23, 349.23, 329.63, 349.23, 261.63, 293.66, 261.63,
+        311.13, 311.13, 293.66, 311.13, 293.66, 261.63, 220.00, 261.63,
+                392.00, 392.00, 392.00, 440.00, 440.00, 466.16, 493.88,
+
+        311.13, 329.63, 311.13, 329.63, 293.66, 261.63, 220.00, 261.63,
+                261.63, 311.13, 293.66, 261.63, 220.00, 261.63,
+        311.13, 329.63, 311.13, 329.63, 293.66, 261.63, 220.00, 261.63,
+                261.63, 311.13, 293.66, 261.63, 220.00, 261.63, 
+        392.00, 392.00, 440.00, 466.16, 493.88, 392.00, 392.00,
+        349.23, 349.23, 329.63, 349.23, 261.63, 293.66, 261.63,
+        277.18, 277.18, 293.66, 277.18, 293.66, 261.63, 220.00, 261.63
+    };
+    float mario_time[] = {0.4, 0.4, 0.4, 0.8,
+        0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+        0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+        0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.4,
+             0.2, 0.1, 0.1, 0.4, 0.2, 0.4,
+        0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.4,
+             0.2, 0.1, 0.1, 0.4, 0.2, 0.4,
+        0.2, 0.2, 0.2, 0.2, 0.2, 0.4, 0.2,
+        0.2, 0.2, 0.2, 0.4, 0.2, 0.2, 0.2,
+        0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.4,
+             0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+        0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.4,
+             0.2, 0.1, 0.1, 0.4, 0.2, 0.4,
+        0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.4,
+             0.2, 0.1, 0.1, 0.4, 0.2, 0.4,
+        0.2, 0.2, 0.2, 0.2, 0.2, 0.4, 0.2,
+        0.2, 0.2, 0.2, 0.4, 0.2, 0.2, 0.2,
+        0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.4,
+             0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2
+    };
+
+    int mario_len = sizeof(mario_notes) / sizeof(mario_notes[0]); 
+
+    for (int i = 0; i < mario_len; i++) {
+        playWave(square, TABLE_SIZE, mario_notes[i], mario_time[i]);
+    }
+    */
+    
     //create queues
     type_q = xQueueCreate(1, sizeof(int));
     freq_q = xQueueCreate(1, sizeof(float));
