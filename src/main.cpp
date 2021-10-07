@@ -5,20 +5,28 @@
 #include <freertos/queue.h>
 #include <freertos/task.h>
 #include <driver/dac.h>
+#include <Wire.h>
+#include <VL53L0X.h>
 
 #define TABLE_SIZE 256 //table size for calculations
-#define AMPLITUDE 3.3 / 2.0 //3.3 is DAC max voltage
+#define AMPLITUDE 0.25 * 16384
 #define MAX_SKEW 100   //max skew for triangle wave
 
 #define SAMPLE_RATE 44100 //audio sample rate
-#define MIN_FREQ 65.41    //C2
+#define MIN_FREQ 65.0    //C2
 #define MAX_FREQ 3951.07  //B7
+
+//INFO volume works just fine -> probably bufferes are needer or better implementation
+//FIX frequency change does not sound good!!!
 
 ESP32Encoder encoder;   //encoder
 //queues for sending data between tasks
 QueueHandle_t type_q;
 QueueHandle_t freq_q;
+QueueHandle_t ampl_q;
 QueueHandle_t skew_q;
+VL53L0X sensor1;
+VL53L0X sensor2;
 
 
 //int skew = 50;
@@ -44,34 +52,23 @@ int enc_val = 0;
 int old_enc = 0;
 
 
-void playWave(int32_t* buffer, uint16_t length, float frequency, float seconds) {
-    // Play back the provided waveform buffer for the specified
-    // amount of seconds.
-    // First calculate how many samples need to play back to run
-    // for the desired amount of seconds.
-    uint32_t iterations = seconds * SAMPLE_RATE;
-    // Then calculate the 'speed' at which we move through the wave
-    // buffer based on the frequency of the tone being played.
-    float delta = (frequency*length)/float(SAMPLE_RATE);
-    // Now loop through all the samples and play them, calculating the
-    // position within the wave buffer for each moment in time.
-    i2s_set_clk(I2S_NUM_0, SAMPLE_RATE, I2S_BITS_PER_SAMPLE_16BIT, (i2s_channel_t)2);
-    size_t i2s_bytes_write;
-    for (uint32_t i=0; i<iterations; ++i) {
-        uint16_t pos = uint32_t(i*delta) % length;
-        int32_t sample = buffer[pos];
-        // Duplicate the sample so it's sent to both the left and right channel.
-        // It appears the order is right channel, left channel if you want to write
-        // stereo sound.
-        //i2s.write(sample, sample);
-        i2s_write(I2S_NUM_0, &sample, sizeof(sample), &i2s_bytes_write, 1);
-        //printf("%d\n", sample);
-    }
+//TODO rename to registerSensor
+//sensor configuration rutine
+void sensorSetup(int enable_pin, uint8_t address, VL53L0X *sensor) {
+    pinMode(enable_pin, OUTPUT);
+    digitalWrite(enable_pin, HIGH); //enable sensor on enable_pinn
+    sensor->init(true);             //initialize the sensor
+    sensor->setAddress(address);    //set new address (required as all sensors have the same default address)
+    pinMode(enable_pin, INPUT);
+    sensor->setMeasurementTimingBudget(20000);  //change timing for faster refresh
 }
 
+
+//TODO use DMA for queues to free up some cpu time or use one core for i2s only
 //main task for "playing" waves
 void playTask(void *params) {
     //triangle config
+    //TODO change AMPLITUDE for amplitude and recalculate
     int skew = 0;
     int t_start_index = 0;
     int t_peak_index = (0 * skew + (TABLE_SIZE / 2) * (MAX_SKEW - skew)) / MAX_SKEW;
@@ -84,11 +81,15 @@ void playTask(void *params) {
 
     int type = 0;   //current wave type
     float frequency = MIN_FREQ; //current frequency
+    float amplitude = AMPLITUDE;
 
     uint32_t iterations = 0.25 * SAMPLE_RATE;                       //iterations (depending on "segment" length). Here it is 0.25s
     float delta = (frequency * TABLE_SIZE) / (float)SAMPLE_RATE;    //how much should we "skip" to get desired frequency
 
     float sample = 0;   //sample which should be writen to the I2S
+
+    printf("playTask default frequency: %f\n", frequency);
+    printf("playTask default amplitude: %f\n", AMPLITUDE);
 
     while (true) {
         //do "math" if there are items in queue
@@ -97,29 +98,35 @@ void playTask(void *params) {
             xQueueReceive(freq_q, &frequency, 0);
             delta = (frequency * TABLE_SIZE) / (float)SAMPLE_RATE;
         }
-        //wave type
-        if (uxQueueMessagesWaiting(type_q)) {
-            xQueueReceive(type_q, &type, 0);
+        if (uxQueueMessagesWaiting(ampl_q)) {
+            xQueueReceive(ampl_q, &amplitude, 0);
+            amplitude = amplitude * 16384;
         }
-        //skew
-        if (uxQueueMessagesWaiting(skew_q)) {
-            xQueueReceive(skew_q, &skew, 0);
-            //t_start_index = 0;
-            t_peak_index = (0 * skew + (TABLE_SIZE / 2) * (MAX_SKEW - skew)) / MAX_SKEW;
-            t_trough_index = TABLE_SIZE - t_peak_index;
-            //t_end_index = TABLE_SIZE;
-            rise_delta = (float)AMPLITUDE / t_peak_index;
-            fall_delta = (float)AMPLITUDE / ((t_trough_index - t_peak_index) / 2);
-        }
+        ////wave type
+        //if (uxQueueMessagesWaiting(type_q)) {
+        //    xQueueReceive(type_q, &type, 0);
+        //}
+        ////skew
+        //if (uxQueueMessagesWaiting(skew_q)) {
+        //    xQueueReceive(skew_q, &skew, 0);
+        //    //t_start_index = 0;
+        //    t_peak_index = (0 * skew + (TABLE_SIZE / 2) * (MAX_SKEW - skew)) / MAX_SKEW;
+        //    t_trough_index = TABLE_SIZE - t_peak_index;
+        //    //t_end_index = TABLE_SIZE;
+        //    rise_delta = (float)AMPLITUDE / t_peak_index;
+        //    fall_delta = (float)AMPLITUDE / ((t_trough_index - t_peak_index) / 2);
+        //}
 
 
         uint16_t pos = uint32_t(i * delta) % TABLE_SIZE;    //skip
 
         //sine
         if (type == 0) {
-            sample = (float)(AMPLITUDE * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * pos));   //calculate sine * amplitude
+            sample = (float)(amplitude * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * pos));   //calculate sine * amplitude
         }
+        //sample = (float)(16384 * AMPLITUDE * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * pos));
 
+        /*
         //square
         else if (type == 1) {
             if (pos < TABLE_SIZE / 2) {
@@ -142,9 +149,12 @@ void playTask(void *params) {
                 sample = (-AMPLITUDE + rise_delta * (pos - t_trough_index));
             }
         }
+        */
+        
         size_t i2s_bytes_write;
-        int32_t int_sample = (int)sample;
-        i2s_write(I2S_NUM_0, &int_sample, sizeof(int_sample), &i2s_bytes_write, 100);   //write data
+        int16_t int_sample = (int16_t)sample;
+        //i2s_write(I2S_NUM_0, &int_sample, sizeof(int_sample), &i2s_bytes_write, 100);   //write data
+        i2s_write(I2S_NUM_1, &int_sample, sizeof(uint32_t), &i2s_bytes_write, portMAX_DELAY);
         //printf("%f\n", sample);
 
         i++;
@@ -153,77 +163,15 @@ void playTask(void *params) {
 }
 
 void setup(void) {
+    Wire.begin();
 
-    /*Mario
-    int32_t square[TABLE_SIZE] = {0};
-    for (int i = 0; i < TABLE_SIZE; i++) {
-        if (i < TABLE_SIZE/2) square[i] = (int32_t)AMPLITUDE;
-        else square[i] = (int32_t)(-AMPLITUDE);
-    }
-    i2s_config_t i2s_config = {
-        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX | I2S_MODE_DAC_BUILT_IN),
-        .sample_rate = SAMPLE_RATE,
-        .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
-        .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
-        .communication_format = I2S_COMM_FORMAT_I2S_MSB,
-        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
-        .dma_buf_count = 8,
-        .dma_buf_len = 256,
-        .use_apll = false,
-    };
-    i2s_driver_install(I2S_NUM_0, &i2s_config, 0, NULL);
-    i2s_set_dac_mode(I2S_DAC_CHANNEL_BOTH_EN);
-    i2s_set_clk(I2S_NUM_0, SAMPLE_RATE, I2S_BITS_PER_SAMPLE_16BIT, (i2s_channel_t)2);
-
-    generateSquare();
-    float mario_notes[] = {261.63, 311.13, 349.23, 369.99,
-        261.63, 261.63, 311.13, 329.63, 349.23, 349.23, 415.30, 440.00,
-        261.63, 261.63, 311.13, 329.63, 349.23, 349.23, 415.30, 440.00,
-        311.13, 329.63, 311.13, 329.63, 293.66, 261.63, 220.00, 261.63,
-                261.63, 311.13, 293.66, 261.63, 220.00, 261.63,
-        311.13, 329.63, 311.13, 329.63, 293.66, 261.63, 220.00, 261.63,
-                261.63, 311.13, 293.66, 261.63, 220.00, 261.63, 
-        392.00, 392.00, 440.00, 466.16, 493.88, 392.00, 392.00,
-        349.23, 349.23, 329.63, 349.23, 261.63, 293.66, 261.63,
-        311.13, 311.13, 293.66, 311.13, 293.66, 261.63, 220.00, 261.63,
-                392.00, 392.00, 392.00, 440.00, 440.00, 466.16, 493.88,
-
-        311.13, 329.63, 311.13, 329.63, 293.66, 261.63, 220.00, 261.63,
-                261.63, 311.13, 293.66, 261.63, 220.00, 261.63,
-        311.13, 329.63, 311.13, 329.63, 293.66, 261.63, 220.00, 261.63,
-                261.63, 311.13, 293.66, 261.63, 220.00, 261.63, 
-        392.00, 392.00, 440.00, 466.16, 493.88, 392.00, 392.00,
-        349.23, 349.23, 329.63, 349.23, 261.63, 293.66, 261.63,
-        277.18, 277.18, 293.66, 277.18, 293.66, 261.63, 220.00, 261.63
-    };
-    float mario_time[] = {0.4, 0.4, 0.4, 0.8,
-        0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
-        0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
-        0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.4,
-             0.2, 0.1, 0.1, 0.4, 0.2, 0.4,
-        0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.4,
-             0.2, 0.1, 0.1, 0.4, 0.2, 0.4,
-        0.2, 0.2, 0.2, 0.2, 0.2, 0.4, 0.2,
-        0.2, 0.2, 0.2, 0.4, 0.2, 0.2, 0.2,
-        0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.4,
-             0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
-        0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.4,
-             0.2, 0.1, 0.1, 0.4, 0.2, 0.4,
-        0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.4,
-             0.2, 0.1, 0.1, 0.4, 0.2, 0.4,
-        0.2, 0.2, 0.2, 0.2, 0.2, 0.4, 0.2,
-        0.2, 0.2, 0.2, 0.4, 0.2, 0.2, 0.2,
-        0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.4,
-             0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2
-    };
-
-    int mario_len = sizeof(mario_notes) / sizeof(mario_notes[0]); 
-
-    for (int i = 0; i < mario_len; i++) {
-        playWave(square, TABLE_SIZE, mario_notes[i], mario_time[i]);
-    }
-    */
-    
+    sensorSetup(18, 18, &sensor1);
+    sensorSetup(19, 19, &sensor2);
+    sensor1.startContinuous();
+    sensor2.startContinuous();
+    freq_q = xQueueCreate(1, sizeof(float));
+    ampl_q = xQueueCreate(1, sizeof(float));
+    /*
     //create queues
     type_q = xQueueCreate(1, sizeof(int));
     freq_q = xQueueCreate(1, sizeof(float));
@@ -239,27 +187,64 @@ void setup(void) {
     pinMode(17, INPUT_PULLUP);
     pinMode(5, INPUT_PULLUP);
     pinMode(18, INPUT_PULLUP);
+    */
 
-    //i2s setup
-    i2s_config_t i2s_config = {
-        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX | I2S_MODE_DAC_BUILT_IN),
-        .sample_rate = SAMPLE_RATE,
+    // i2s pins
+    i2s_pin_config_t i2sPins = {
+        .bck_io_num = 16,
+        .ws_io_num = 17,
+        .data_out_num = 25,
+        .data_in_num = -1};
+    
+    // i2s config for writing both channels of I2S
+    i2s_config_t i2sConfig = {
+        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
+        .sample_rate = 44100,
         .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
         .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
-        .communication_format = I2S_COMM_FORMAT_I2S_MSB,
+        .communication_format = (i2s_comm_format_t)(I2S_COMM_FORMAT_I2S),
         .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
-        .dma_buf_count = 8,
-        .dma_buf_len = 256,
-        .use_apll = false,
-    };
-    i2s_driver_install(I2S_NUM_0, &i2s_config, 0, NULL);
-    i2s_set_dac_mode(I2S_DAC_CHANNEL_BOTH_EN);
-    i2s_set_clk(I2S_NUM_0, SAMPLE_RATE, I2S_BITS_PER_SAMPLE_16BIT, (i2s_channel_t)2);
+        .dma_buf_count = 4,
+        .dma_buf_len = 64};
 
-    xTaskCreate(playTask, "play_task", 10000, NULL, 1, NULL);   //create task
+    //install and start i2s driver
+    i2s_driver_install(I2S_NUM_1, &i2sConfig, 0, NULL);
+    // set up the i2s pins
+    i2s_set_pin(I2S_NUM_1, &i2sPins);
+    // clear the DMA buffers
+    i2s_zero_dma_buffer(I2S_NUM_1);
+
+    TaskHandle_t task;
+    xTaskCreatePinnedToCore(playTask, "play_task", 10000, NULL, 1, &task, 0);   //create task
 }
 
+int old_len1 = 0;
+int old_len2 = 0;
+
 void loop(void) {
+    int len1 = sensor1.readRangeContinuousMillimeters();
+    if (len1 < 1000) {
+        if (len1 < 60) len1 = 60;
+        if (len1 > 800) len1 = 800;
+        if (old_len1 != len1) {
+            old_len1 = len1;
+            frequency = (float)(map(len1, 60, 800, MIN_FREQ * 100, MAX_FREQ * 100)) / 100.0;
+            //printf("Distance: %d freq: %f\n", len, frequency);
+            xQueueSend(freq_q, &frequency, portMAX_DELAY);
+        }
+    }
+    int len2 = sensor2.readRangeContinuousMillimeters();
+    if (len2 < 1000) {
+        if (len2 < 60) len2 = 60;
+        if (len2 > 800) len2 = 800;
+        if (old_len2 != len2) {
+            old_len2 = len2;
+            float amplitude = (float)(map(len2, 60, 800, 0, 100)) / 100.0;
+            //printf("Distance: %d freq: %f\n", len, frequency);
+            xQueueSend(ampl_q, &amplitude, portMAX_DELAY);
+        }
+    }
+    /*
     //switch between frequency and skew adjustment
     if (!digitalRead(18)) {
         skew_val = encoder.getCount();
@@ -304,4 +289,5 @@ void loop(void) {
         }
         xQueueSend(type_q, &wave_type, portMAX_DELAY);
     }
+    */
 }
