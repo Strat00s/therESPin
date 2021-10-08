@@ -9,7 +9,7 @@
 #include <VL53L0X.h>
 
 #define TABLE_SIZE 1024 //table size for calculations
-#define AMPLITUDE 0.25 * 16384
+#define AMPLITUDE 0.05 * 16384
 #define MAX_SKEW 100   //max skew for triangle wave
 
 #define SAMPLE_RATE 44100 //audio sample rate
@@ -19,6 +19,7 @@
 //INFO volume works just fine -> probably bufferes are needer or better implementation
 //FIX frequency change does not sound good!!!
 //FIX seems to be channel related
+//TODO probably some smoothing
 
 ESP32Encoder encoder;   //encoder
 //queues for sending data between tasks
@@ -128,35 +129,35 @@ void playTask(void *params) {
         }
         //sample = (float)(16384 * AMPLITUDE * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * pos));
 
-        /*
+        
         //square
-        else if (type == 1) {
-            if (pos < TABLE_SIZE / 2) {
-                sample = AMPLITUDE;
-            }
-            else {
-                sample = (-AMPLITUDE);
-            }
-        }
+        //else if (type == 1) {
+        //    if (pos < TABLE_SIZE / 2) {
+        //        int_sample = (int16_t)AMPLITUDE;
+        //    }
+        //    else {
+        //        int_sample = (int16_t)(-AMPLITUDE);
+        //    }
+        //}
 
         //triangle
-        else if (type == 2) {
-            if (pos < t_peak_index) {
-                sample = (rise_delta * pos);
-            }
-            else if (pos < t_trough_index) {
-                sample = (AMPLITUDE - fall_delta * (pos - t_peak_index));
-            }
-            else {
-                sample = (-AMPLITUDE + rise_delta * (pos - t_trough_index));
-            }
-        }
-        */
+        //else if (type == 2) {
+        //    if (pos < t_peak_index) {
+        //        sample = (rise_delta * pos);
+        //    }
+        //    else if (pos < t_trough_index) {
+        //        sample = (AMPLITUDE - fall_delta * (pos - t_peak_index));
+        //    }
+        //    else {
+        //        sample = (-AMPLITUDE + rise_delta * (pos - t_trough_index));
+        //    }
+        //}
+        
         
         size_t i2s_bytes_write;
         //int16_t int_sample = (int16_t)sample;
         //i2s_write(I2S_NUM_0, &int_sample, sizeof(int_sample), &i2s_bytes_write, 100);   //write data
-        i2s_write(I2S_NUM_1, &int_sample, sizeof(uint32_t), &i2s_bytes_write, portMAX_DELAY);
+        i2s_write(I2S_NUM_1, &int_sample, sizeof(uint16_t), &i2s_bytes_write, portMAX_DELAY);
         //printf("%f\n", sample);
 
         i++;
@@ -203,11 +204,12 @@ void setup(void) {
         .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
         .sample_rate = 44100,
         .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
-        .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
+        .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
         .communication_format = I2S_COMM_FORMAT_I2S,
         .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
         .dma_buf_count = 4,
-        .dma_buf_len = 64};
+        .dma_buf_len = 64,
+        .use_apll = true};
 
     //install and start i2s driver
     i2s_driver_install(I2S_NUM_1, &i2sConfig, 0, NULL);
@@ -215,9 +217,10 @@ void setup(void) {
     i2s_set_pin(I2S_NUM_1, &i2sPins);
     // clear the DMA buffers
     i2s_zero_dma_buffer(I2S_NUM_1);
+    //i2s_set_clk(I2S_NUM_1, SAMPLE_RATE, I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_MONO);
 
     TaskHandle_t task;
-    xTaskCreate(playTask, "play_task", 10000, NULL, 1, &task);   //create task
+    xTaskCreate(playTask, "play_task", 100000, NULL, 1, &task);   //create task
 }
 
 int old_len1 = 0;
