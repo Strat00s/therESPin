@@ -8,16 +8,17 @@
 #include <Wire.h>
 #include <VL53L0X.h>
 
-#define TABLE_SIZE 256 //table size for calculations
+#define TABLE_SIZE 1024 //table size for calculations
 #define AMPLITUDE 0.25 * 16384
 #define MAX_SKEW 100   //max skew for triangle wave
 
 #define SAMPLE_RATE 44100 //audio sample rate
-#define MIN_FREQ 65.0    //C2
-#define MAX_FREQ 3951.07  //B7
+#define MIN_FREQ 440.0
+#define MAX_FREQ 4400.0
 
 //INFO volume works just fine -> probably bufferes are needer or better implementation
 //FIX frequency change does not sound good!!!
+//FIX seems to be channel related
 
 ESP32Encoder encoder;   //encoder
 //queues for sending data between tasks
@@ -120,9 +121,10 @@ void playTask(void *params) {
 
         uint16_t pos = uint32_t(i * delta) % TABLE_SIZE;    //skip
 
+        int16_t int_sample;
         //sine
         if (type == 0) {
-            sample = (float)(amplitude * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * pos));   //calculate sine * amplitude
+            int_sample = (int)(amplitude * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * pos));   //calculate sine * amplitude
         }
         //sample = (float)(16384 * AMPLITUDE * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * pos));
 
@@ -152,7 +154,7 @@ void playTask(void *params) {
         */
         
         size_t i2s_bytes_write;
-        int16_t int_sample = (int16_t)sample;
+        //int16_t int_sample = (int16_t)sample;
         //i2s_write(I2S_NUM_0, &int_sample, sizeof(int_sample), &i2s_bytes_write, 100);   //write data
         i2s_write(I2S_NUM_1, &int_sample, sizeof(uint32_t), &i2s_bytes_write, portMAX_DELAY);
         //printf("%f\n", sample);
@@ -202,7 +204,7 @@ void setup(void) {
         .sample_rate = 44100,
         .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
         .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
-        .communication_format = (i2s_comm_format_t)(I2S_COMM_FORMAT_I2S),
+        .communication_format = I2S_COMM_FORMAT_I2S,
         .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
         .dma_buf_count = 4,
         .dma_buf_len = 64};
@@ -215,35 +217,35 @@ void setup(void) {
     i2s_zero_dma_buffer(I2S_NUM_1);
 
     TaskHandle_t task;
-    xTaskCreatePinnedToCore(playTask, "play_task", 10000, NULL, 1, &task, 0);   //create task
+    xTaskCreate(playTask, "play_task", 10000, NULL, 1, &task);   //create task
 }
 
 int old_len1 = 0;
 int old_len2 = 0;
 
 void loop(void) {
-    int len1 = sensor1.readRangeContinuousMillimeters();
+    int len1 = sensor2.readRangeContinuousMillimeters();
     if (len1 < 1000) {
         if (len1 < 60) len1 = 60;
         if (len1 > 800) len1 = 800;
-        if (old_len1 != len1) {
+        if (abs(old_len1 - len1) > 10) {
             old_len1 = len1;
             frequency = (float)(map(len1, 60, 800, MIN_FREQ * 100, MAX_FREQ * 100)) / 100.0;
-            //printf("Distance: %d freq: %f\n", len, frequency);
+            printf("Distance: %d freq: %f\n", len1, frequency);
             xQueueSend(freq_q, &frequency, portMAX_DELAY);
         }
     }
-    int len2 = sensor2.readRangeContinuousMillimeters();
-    if (len2 < 1000) {
-        if (len2 < 60) len2 = 60;
-        if (len2 > 800) len2 = 800;
-        if (old_len2 != len2) {
-            old_len2 = len2;
-            float amplitude = (float)(map(len2, 60, 800, 0, 100)) / 100.0;
-            //printf("Distance: %d freq: %f\n", len, frequency);
-            xQueueSend(ampl_q, &amplitude, portMAX_DELAY);
-        }
-    }
+    //int len2 = sensor2.readRangeContinuousMillimeters();
+    //if (len2 < 1000) {
+    //    if (len2 < 60) len2 = 60;
+    //    if (len2 > 800) len2 = 800;
+    //    if (old_len2 != len2) {
+    //        old_len2 = len2;
+    //        float amplitude = (float)(map(len2, 60, 800, 0, 100)) / 100.0;
+    //        printf("Distance: %d ampl: %f\n", len2, amplitude);
+    //        xQueueSend(ampl_q, &amplitude, portMAX_DELAY);
+    //    }
+    //}
     /*
     //switch between frequency and skew adjustment
     if (!digitalRead(18)) {
