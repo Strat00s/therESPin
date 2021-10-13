@@ -12,7 +12,7 @@ using namespace std;
 #define FREQUENCY 10
 #define JUMP 100
 
-#define TABLE_SIZE 1024
+#define TABLE_SIZE 65536
 #define SAMPLE_RATE 44100
 
 //check and convert string to number
@@ -63,9 +63,9 @@ int main(int argc, char *argv[]) {
         e_pos += e_delta;   //(int)(i * e_delta) % TABLE_SIZE;  
         s_pos += delta;//(int)(i * delta) % TABLE_SIZE;    //skip
         o_pos = (int)(i * delta) % TABLE_SIZE;
-        float e_val = 100 * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * e_pos);
-        float s_val = 100 * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * s_pos);
-        float o_val = 100 * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * o_pos);
+        float e_val = 10 * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * e_pos);
+        float s_val = 10 * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * s_pos);
+        float o_val = 10 * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * o_pos);
         //cout << i << " | " << frequency << "Hz | Pos: "   << pos   << " | val: "   << val << endl;
         //cout << i << " | " << e_freq    << "Hz | e_pos: " << e_pos << " | e_val: " << e_val << endl;
         file << i << ",old,red," << o_val << endl;
