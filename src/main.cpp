@@ -8,18 +8,19 @@
 #include <Wire.h>
 #include <VL53L0X.h>
 
-#define TABLE_SIZE 1024 //table size for calculations
+#define TABLE_SIZE 65536 //table size for calculations (wave samples) -> how many waves can be created
 #define AMPLITUDE 0.05 * 16384
 #define MAX_SKEW 100   //max skew for triangle wave
 
 #define SAMPLE_RATE 44100 //audio sample rate
-#define MIN_FREQ 440.0
-#define MAX_FREQ 4400.0
+//#define MIN_FREQ 170.0
+//#define MAX_FREQ 440.0
+#define MIN_FREQ 170.0
+#define MAX_FREQ 2600.0
 
 //INFO volume works just fine -> probably bufferes are needer or better implementation
 //FIX frequency change does not sound good!!!
 //FIX seems to be channel related
-//TODO probably some smoothing
 
 ESP32Encoder encoder;   //encoder
 //queues for sending data between tasks
@@ -82,13 +83,16 @@ void playTask(void *params) {
     int i = 0;  //indexing for calculations
 
     int type = 0;   //current wave type
-    float frequency = MIN_FREQ; //current frequency
+    float target_frequency = MIN_FREQ; //current frequency
     float amplitude = AMPLITUDE;
+    float delta;
 
+    //TODO time?          ....
     uint32_t iterations = 0.25 * SAMPLE_RATE;                       //iterations (depending on "segment" length). Here it is 0.25s
-    float delta = (frequency * TABLE_SIZE) / (float)SAMPLE_RATE;    //how much should we "skip" to get desired frequency
+    //float delta = (frequency * TABLE_SIZE) / (float)SAMPLE_RATE;    //how much should we "skip" to get desired frequency
 
     float sample = 0;   //sample which should be writen to the I2S
+    uint16_t pos = 0;
 
     printf("playTask default frequency: %f\n", frequency);
     printf("playTask default amplitude: %f\n", AMPLITUDE);
@@ -97,13 +101,15 @@ void playTask(void *params) {
         //do "math" if there are items in queue
         //frequency
         if (uxQueueMessagesWaiting(freq_q)) {
-            xQueueReceive(freq_q, &frequency, 0);
-            delta = (frequency * TABLE_SIZE) / (float)SAMPLE_RATE;
+            xQueueReceive(freq_q, &target_frequency, 0);
+            //delta = (frequency * TABLE_SIZE) / (float)SAMPLE_RATE;
         }
-        if (uxQueueMessagesWaiting(ampl_q)) {
-            xQueueReceive(ampl_q, &amplitude, 0);
-            amplitude = amplitude * 16384;
-        }
+        //if (uxQueueMessagesWaiting(ampl_q)) {
+        //    xQueueReceive(ampl_q, &amplitude, 0);
+        //}
+
+        frequency += 0.05 * (target_frequency - frequency);
+        delta = (frequency * TABLE_SIZE) / SAMPLE_RATE;
         ////wave type
         //if (uxQueueMessagesWaiting(type_q)) {
         //    xQueueReceive(type_q, &type, 0);
@@ -120,7 +126,8 @@ void playTask(void *params) {
         //}
 
 
-        uint16_t pos = uint32_t(i * delta) % TABLE_SIZE;    //skip
+        //uint16_t pos = uint32_t(i * delta) % TABLE_SIZE;    //skip
+        pos += delta;
 
         int16_t int_sample;
         //sine
@@ -129,7 +136,7 @@ void playTask(void *params) {
         }
         //sample = (float)(16384 * AMPLITUDE * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * pos));
 
-        
+        //TODO fix square and triangle
         //square
         //else if (type == 1) {
         //    if (pos < TABLE_SIZE / 2) {
@@ -158,10 +165,11 @@ void playTask(void *params) {
         //int16_t int_sample = (int16_t)sample;
         //i2s_write(I2S_NUM_0, &int_sample, sizeof(int_sample), &i2s_bytes_write, 100);   //write data
         i2s_write(I2S_NUM_1, &int_sample, sizeof(uint16_t), &i2s_bytes_write, portMAX_DELAY);
-        //printf("%f\n", sample);
+        //printf("%d\n", int_sample);
 
-        i++;
-        if (i >= iterations) i = 0; //iterate
+        //INFO no longer required?
+        //i++;
+        //if (i >= iterations) i = 0; //iterate
     }
 }
 
@@ -226,29 +234,33 @@ void setup(void) {
 int old_len1 = 0;
 int old_len2 = 0;
 
+//TODO input smoothing
 void loop(void) {
-    int len1 = sensor2.readRangeContinuousMillimeters();
+    int len1 = sensor1.readRangeContinuousMillimeters();
     if (len1 < 1000) {
         if (len1 < 60) len1 = 60;
         if (len1 > 800) len1 = 800;
-        if (abs(old_len1 - len1) > 10) {
+        if (old_len1 - len1) {
             old_len1 = len1;
             frequency = (float)(map(len1, 60, 800, MIN_FREQ * 100, MAX_FREQ * 100)) / 100.0;
             printf("Distance: %d freq: %f\n", len1, frequency);
-            xQueueSend(freq_q, &frequency, portMAX_DELAY);
+            if (!uxQueueMessagesWaiting(freq_q))
+                xQueueSend(freq_q, &frequency, portMAX_DELAY);
         }
     }
-    //int len2 = sensor2.readRangeContinuousMillimeters();
-    //if (len2 < 1000) {
-    //    if (len2 < 60) len2 = 60;
-    //    if (len2 > 800) len2 = 800;
-    //    if (old_len2 != len2) {
-    //        old_len2 = len2;
-    //        float amplitude = (float)(map(len2, 60, 800, 0, 100)) / 100.0;
-    //        printf("Distance: %d ampl: %f\n", len2, amplitude);
-    //        xQueueSend(ampl_q, &amplitude, portMAX_DELAY);
-    //    }
-    //}
+    int len2 = sensor2.readRangeContinuousMillimeters();
+    if (len2 < 1000) {
+        if (len2 < 60) len2 = 60;
+        if (len2 > 800) len2 = 800;
+        if (old_len2 != len2) {
+            old_len2 = len2;
+            float amplitude = (float)(map(len2, 60, 800, 0, 100)) / 100.0;
+            amplitude *= 16384;
+            printf("Distance: %d ampl: %f\n", len2, amplitude);
+            if (!uxQueueMessagesWaiting(ampl_q))
+                xQueueSend(ampl_q, &amplitude, portMAX_DELAY);
+        }
+    }
     /*
     //switch between frequency and skew adjustment
     if (!digitalRead(18)) {
