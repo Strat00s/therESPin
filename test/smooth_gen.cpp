@@ -48,24 +48,29 @@ int main(int argc, char *argv[]) {
     ofstream file;
     file.open("test.txt");
     file << "dT,category,format,val" << endl;
-    float delta, s_delta, pos, s_pos, old_sample = 0;
-    float s_freq = frequency;
+    float e_delta, e_pos, e_freq = frequency;
+    float delta, o_pos, old_sample = 0;
+    float s_pos;
     for (int i = 0; i < samples; i++) {
         if (i -  old_sample >= split) {
             old_sample = i;
             frequency += jump;
         }
-        //s_freq += 0.1 * (frequency - s_freq);
-        //s_delta = (s_freq * TABLE_SIZE) / SAMPLE_RATE;
+
+        e_freq += 0.05 * (frequency - e_freq);
+        e_delta = (e_freq * TABLE_SIZE) / SAMPLE_RATE;
         delta = (frequency * TABLE_SIZE) / SAMPLE_RATE;
-        //s_pos = (int)(i * s_delta) % TABLE_SIZE;  
-        pos += delta;//(int)(i * delta) % TABLE_SIZE;    //skip
-        //float s_val = 100 * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * s_pos);
-        float val = 100 * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * pos);
-        cout << i << " | " << frequency << "Hz | Pos: "   << pos   << " | val: "   << val << endl;
-        //cout << i << " | " << s_freq    << "Hz | s_pos: " << s_pos << " | s_val: " << s_val << endl;
-        file << i << ",normal,red," << val << endl;
-        //file << i << ",smoothed,blue," << s_val << endl;
+        e_pos += e_delta;   //(int)(i * e_delta) % TABLE_SIZE;  
+        s_pos += delta;//(int)(i * delta) % TABLE_SIZE;    //skip
+        o_pos = (int)(i * delta) % TABLE_SIZE;
+        float e_val = 100 * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * e_pos);
+        float s_val = 100 * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * s_pos);
+        float o_val = 100 * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * o_pos);
+        //cout << i << " | " << frequency << "Hz | Pos: "   << pos   << " | val: "   << val << endl;
+        //cout << i << " | " << e_freq    << "Hz | e_pos: " << e_pos << " | e_val: " << e_val << endl;
+        file << i << ",old,red," << o_val << endl;
+        file << i << ",new_smoothed,blue," << s_val << endl;
+        file << i << ",new_extraS,green," << e_val << endl;
     }
     file.close();
 }
