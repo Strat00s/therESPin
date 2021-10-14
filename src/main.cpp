@@ -9,7 +9,7 @@
 #include <VL53L0X.h>
 
 #define TABLE_SIZE 65536 //table size for calculations (wave samples) -> how many waves can be created
-#define AMPLITUDE 0.01 * 16384
+#define AMPLITUDE 0.1 * 16384
 #define MAX_SKEW 100   //max skew for triangle wave
 
 #define SAMPLE_RATE 44100 //audio sample rate
@@ -36,11 +36,15 @@ VL53L0X sensor2;
 //float rise_delta = (float)AMPLITUDE / t_peak_index;
 //float fall_delta = (float)AMPLITUDE / ((t_trough_index - t_peak_index) / 2);
 
-float frequency = MIN_FREQ;
+float target_frequency = MIN_FREQ;
+float target_amplitude = AMPLITUDE;
+int target_wave_type = 0;
+int target_skew = 0;
+int target_duty_cycle = 0;
 
 //wave type switching
-int old_type = 0;
-int wave_type = 0;
+//int old_type = 0;
+//int wave_type = 0;
 
 
 //sensor configuration rutine
@@ -57,20 +61,20 @@ void registerSensor(int enable_pin, uint8_t address, VL53L0X *sensor) {
 //main task for "playing" waves
 void playTask(void *params) {
     //triangle config
-    int skew = 0;
+    //int skew = 0;
     //int t_start_index = 0;
-    int t_peak_index = (0 * skew + (TABLE_SIZE / 2) * (MAX_SKEW - skew)) / MAX_SKEW;
+    int t_peak_index = (0 * target_skew + (TABLE_SIZE / 2) * (MAX_SKEW - target_skew)) / MAX_SKEW;
     int t_trough_index = TABLE_SIZE - t_peak_index;
     //int t_end_index = TABLE_SIZE;
     float rise_delta = (float)AMPLITUDE / t_peak_index;
     float fall_delta = (float)AMPLITUDE / ((t_trough_index - t_peak_index) / 2);
 
-    int i = 0;  //indexing for calculations
+    //int i = 0;  //indexing for calculations
 
-    int type = 0;   //current wave type
-    float target_frequency = MIN_FREQ; //current frequency
+    //int type = 0;   //current wave type
+    //float target_frequency = MIN_FREQ; //current frequency
     float frequency = MIN_FREQ;
-    float target_amplitude = AMPLITUDE;
+    //float target_amplitude = AMPLITUDE;
     float amplitude = AMPLITUDE;
     float delta;
 
@@ -81,24 +85,24 @@ void playTask(void *params) {
     printf("playTask default amplitude: %f\n", AMPLITUDE);
 
 
-    int old_type = 0;
+    //int old_type = 0;
     while (true) {
         //do "math" if there are items in queue
         //frequency
-        if (uxQueueMessagesWaiting(freq_q)) {
-            xQueueReceive(freq_q, &target_frequency, 0);
-            //delta = (frequency * TABLE_SIZE) / (float)SAMPLE_RATE;
-        }
+        //if (uxQueueMessagesWaiting(freq_q)) {
+        //    xQueueReceive(freq_q, &target_frequency, 0);
+        //    //delta = (frequency * TABLE_SIZE) / (float)SAMPLE_RATE;
+        //}
 
         //amplitude
-        if (uxQueueMessagesWaiting(ampl_q)) {
-            xQueueReceive(ampl_q, &target_amplitude, 0);
-        }
+        //if (uxQueueMessagesWaiting(ampl_q)) {
+        //    xQueueReceive(ampl_q, &target_amplitude, 0);
+        //}
 
         //wave type
-        if (uxQueueMessagesWaiting(type_q)) {
-            xQueueReceive(type_q, &type, 0);
-        }
+        //if (uxQueueMessagesWaiting(type_q)) {
+        //    xQueueReceive(type_q, &type, 0);
+        //}
         //skew
         //if (uxQueueMessagesWaiting(skew_q)) {
         //    xQueueReceive(skew_q, &skew, 0);
@@ -118,17 +122,17 @@ void playTask(void *params) {
 
         //INFO sine wave works best alone only with amplitude and frequency (queues)
         //sine
-        if (type == 0) {
-            if (old_type != type) {
-                frequency = target_frequency;
-                pos = 0;
-            }
+        if (target_wave_type == 0) {
+            //if (old_type != type) {
+            //    frequency = target_frequency;
+            //    pos = 0;
+            //}
             int_sample = (int16_t)(amplitude * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * pos));   //calculate sine * amplitude
         }
 
         //square
-        else if (type == 1) {
-            if (pos < TABLE_SIZE / 2)
+        else if (target_wave_type == 1) {
+            if (pos < (TABLE_SIZE / 100 * target_duty_cycle))
                 int_sample = (int16_t)amplitude;
             else
                 int_sample = (int16_t)(-amplitude);
@@ -136,7 +140,12 @@ void playTask(void *params) {
 
         //TODO fix triangle amplitude (starts in the middle)
         //triangle
-        else if (type == 2) {
+        else if (target_wave_type == 2) {
+            t_peak_index = (0 * target_skew + (TABLE_SIZE / 2) * (MAX_SKEW - target_skew)) / MAX_SKEW;
+            t_trough_index = TABLE_SIZE - t_peak_index;
+           //t_end_index = TABLE_SIZE;
+            rise_delta = (float)amplitude / t_peak_index;
+            fall_delta = (float)amplitude / ((t_trough_index - t_peak_index) / 2);
             if (pos < t_peak_index) 
                 int_sample =  (int16_t)(rise_delta * pos);
             else if (pos < t_trough_index)
@@ -144,7 +153,7 @@ void playTask(void *params) {
             else
                 int_sample = (int16_t)(-amplitude + rise_delta * (pos - t_trough_index));
         }
-        old_type = type;
+        //old_type = type;
 
 
         //INFO temporary amplitude fix???
@@ -221,6 +230,8 @@ void setup(void) {
 int old_len1 = 0;
 int old_len2 = 0;
 int old_enc = 0;
+int old_type = 0;
+int wave_type = 0;
 
 //TODO input smoothing
 
@@ -234,10 +245,11 @@ void loop(void) {
         if (len1 > 800) len1 = 800;
         if (old_len1 - len1) {
             old_len1 = len1;
-            frequency = (float)(map(len1, 60, 800, MIN_FREQ * 100, MAX_FREQ * 100)) / 100.0;
-            printf("Distance: %d freq: %f\n", len1, frequency);
-            if (!uxQueueMessagesWaiting(freq_q))
-                xQueueSend(freq_q, &frequency, portMAX_DELAY);
+            //float frequency = (float)(map(len1, 60, 800, MIN_FREQ * 100, MAX_FREQ * 100)) / 100.0;
+            target_frequency = (float)(map(len1, 60, 800, MIN_FREQ * 100, MAX_FREQ * 100)) / 100.0;
+            printf("Distance: %d freq: %f\n", len1, target_frequency);
+            //if (!uxQueueMessagesWaiting(freq_q))
+            //    xQueueSend(freq_q, &frequency, portMAX_DELAY);
         }
     }
 
@@ -246,11 +258,14 @@ void loop(void) {
         if (len2 > 800) len2 = 800;
         if (old_len2 != len2) {
             old_len2 = len2;
-            float amplitude = (float)(map(len2, 60, 800, 0, 100)) / 100.0;
-            amplitude *= 16384;
-            printf("Distance: %d ampl: %f\n", len2, amplitude);
-            if (!uxQueueMessagesWaiting(ampl_q))
-                xQueueSend(ampl_q, &amplitude, portMAX_DELAY);
+            //float amplitude = (float)(map(len2, 60, 800, 0, 100)) / 100.0;
+            //amplitude *= 16384;
+            
+            target_amplitude = ((float)(map(len2, 60, 800, 5, 20)) / 100.0) * 16384;
+            printf("Distance: %d ampl: %f\n", len2, target_amplitude);
+            
+            //if (!uxQueueMessagesWaiting(ampl_q))
+            //    xQueueSend(ampl_q, &amplitude, portMAX_DELAY);
         }
     }
 
@@ -261,7 +276,10 @@ void loop(void) {
         encoder.setCount(100);
     if (old_enc != enc) {
         old_enc = enc;
-        printf("Encoder: %d\n", enc);
+        target_skew = enc;
+        target_duty_cycle = enc;
+        printf("Target skew: %d\n", target_skew);
+        printf("Target dc: %d\n", target_duty_cycle);
         //if (!uxQueueMessagesWaiting(skew_q))
         //    xQueueSend(skew_q, &enc, portMAX_DELAY);
     }
@@ -279,8 +297,9 @@ void loop(void) {
             case 2:  printf("triangle\n"); break;
             default: printf("unknown\n");  break;
         }
-        if (!uxQueueMessagesWaiting(type_q))
-            xQueueSend(type_q, &wave_type, portMAX_DELAY);
+        target_wave_type = wave_type;
+        //if (!uxQueueMessagesWaiting(type_q))
+        //    xQueueSend(type_q, &wave_type, portMAX_DELAY);
     }
     delay(10);
 }
