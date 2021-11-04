@@ -23,9 +23,18 @@ using namespace std;
 #define MIN_FREQ 170.0
 #define MAX_FREQ 440.0
 
+
+TwoWire i2c_one(0);
+TwoWire i2c_two(1);
+
 ESP32Encoder encoder;   //encoder
 VL53L0X sensor1;
 VL53L0X sensor2;
+
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
+//U8G2_SSD1306_128X64_NONAME_F_SW_I2C u8g2(U8G2_R0, 7, 6, U8X8_PIN_NONE);
+
+Menu menu(&u8g2);
 
 
 //int skew = 50;
@@ -39,8 +48,8 @@ VL53L0X sensor2;
 float target_frequency = MIN_FREQ;
 float target_amplitude = AMPLITUDE;
 int target_wave_type = 0;
-int target_skew = 0;
-int target_duty_cycle = 0;
+int target_skew = 50;
+int target_duty_cycle = 50;
 
 //wave type switching
 //int old_type = 0;
@@ -55,6 +64,24 @@ void registerSensor(int enable_pin, uint8_t address, VL53L0X *sensor) {
     sensor->setAddress(address);    //set new address (required as all sensors have the same default address)
     pinMode(enable_pin, INPUT);
     sensor->setMeasurementTimingBudget(20000);  //change timing for faster refresh
+}
+
+void menuTask(void *params) {
+    menu.addByName("root", "Wave", picker, &target_wave_type, {"sine", "square", "triangle"});
+    menu.addByName("root", "Skew", counter, 0, 100, &target_skew);
+    menu.addByName("root", "Duty cycle", counter, 0, 100, &target_duty_cycle);
+    int position = 0;
+    bool select = false;
+
+    while(true) {
+        if (!digitalRead(23)) {
+        while(!digitalRead(23));
+            select = true;
+        }
+        position = encoder.getCount();
+        menu.render(&position, &select);
+        encoder.setCount(position);
+    }
 }
 
 
@@ -135,27 +162,37 @@ void playTask(void *params) {
 }
 
 void setup(void) {
-    Wire.begin();
+    menu.addByName("root", "Wave", picker, &target_wave_type, {"sine", "square", "triangle"});
+    menu.addByName("root", "Skew", counter, 0, 100, &target_skew);
+    menu.addByName("root", "Duty cycle", counter, 0, 100, &target_duty_cycle);
 
-    registerSensor(18, 18, &sensor1);
-    registerSensor(19, 19, &sensor2);
-    
-    cout << "Sensor 1: " << static_cast<int> (sensor1.getAddress()) << endl;
-    cout << "Sensor 2: " << static_cast<int> (sensor2.getAddress()) << endl;
+    Wire.begin(SDA, SCL, 100000);
+    Wire1.begin(19, 18, 100000);
+
+    sensor1.setBus(&Wire1);
+    sensor2.setBus(&Wire1);
+    registerSensor(4, 4, &sensor1);
+    registerSensor(0, 0, &sensor2);
     
     sensor1.startContinuous();
     sensor2.startContinuous();
 
-    //encoder setup
+    u8g2.begin();
+    u8g2.setFont(u8g2_font_6x10_mf);   //font dimensions: 11x11
+    u8g2.clearBuffer();
+
     ESP32Encoder::useInternalWeakPullResistors=UP;
     encoder.attachSingleEdge(36, 39);
     encoder.setFilter(1023);
     encoder.clearCount();
 
-    //buttons setup
-    pinMode(9 , INPUT_PULLUP);
-    pinMode(10, INPUT_PULLUP);
-    pinMode(11, INPUT_PULLUP); 
+    menu.begin();   //start menu
+
+    //
+    pinMode(23, INPUT_PULLUP);
+    //pinMode(9 , INPUT_PULLUP);
+    //pinMode(10, INPUT_PULLUP);
+    //pinMode(11, INPUT_PULLUP); 
 
     // i2s pins
     i2s_pin_config_t i2sPins = {
@@ -186,19 +223,20 @@ void setup(void) {
 
     TaskHandle_t task;
     xTaskCreate(playTask, "play_task", 100000, NULL, 1, &task);   //create task
+
+    TaskHandle_t menu_task;
+    xTaskCreate(menuTask, "menu_task", 100000, NULL, 1, &menu_task);   //create task
 }
 
 int old_len1 = 0;
 int old_len2 = 0;
-int old_enc = 0;
-int old_type = 0;
-int wave_type = 0;
+int position = 0;
+    bool select = false;
 
 //TODO input smoothing
 void loop(void) {
     int len1 = sensor1.readRangeContinuousMillimeters();
     int len2 = sensor2.readRangeContinuousMillimeters();
-    int enc = encoder.getCount();
     if (len1 < 1000) {
         if (len1 < 60) len1 = 60;
         if (len1 > 800) len1 = 800;
@@ -220,32 +258,12 @@ void loop(void) {
         }
     }
 
-    //TODO fix this - sine wave is somehow choppy
-    if (enc < 0)
-        encoder.setCount(0);
-    if (enc > 100)
-        encoder.setCount(100);
-    if (old_enc != enc) {
-        old_enc = enc;
-        target_skew = enc;
-        target_duty_cycle = enc;
-        printf("Target skew: %d\n", target_skew);
-        printf("Target dc: %d\n", target_duty_cycle);
-    }
-
-    //read buttons and queue desired wave type
-    if (!digitalRead(9))  wave_type = 0;
-    if (!digitalRead(10)) wave_type = 1;
-    if (!digitalRead(11)) wave_type = 2;
-    if (old_type != wave_type) {
-        old_type = wave_type;
-        printf("Wave type: ");
-        switch (wave_type) {
-            case 0:  printf("sine\n");     break;
-            case 1:  printf("square\n");   break;
-            case 2:  printf("triangle\n"); break;
-            default: printf("unknown\n");  break;
+    if (!digitalRead(23)) {
+        while(!digitalRead(23));
+            select = true;
         }
-        target_wave_type = wave_type;
-    }
+    position = encoder.getCount();
+    menu.render(&position, &select);
+    encoder.setCount(position);
+    
 }
