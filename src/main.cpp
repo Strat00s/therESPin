@@ -7,6 +7,11 @@
 #include <driver/dac.h>
 #include <Wire.h>
 #include <VL53L0X.h>
+#include <SPI.h>
+#include <Wire.h>
+#include <iostream>
+
+using namespace std;
 
 #define TABLE_SIZE 65536 //table size for calculations (wave samples) -> how many waves can be created
 #define AMPLITUDE 0.1 * 16384
@@ -176,6 +181,10 @@ void setup(void) {
 
     registerSensor(18, 18, &sensor1);
     registerSensor(19, 19, &sensor2);
+    
+    cout << "Sensor 1: " << static_cast<int> (sensor1.getAddress()) << endl;
+    cout << "Sensor 2: " << static_cast<int> (sensor2.getAddress()) << endl;
+    
     sensor1.startContinuous();
     sensor2.startContinuous();
     freq_q = xQueueCreate(1, sizeof(float));
@@ -301,5 +310,4 @@ void loop(void) {
         //if (!uxQueueMessagesWaiting(type_q))
         //    xQueueSend(type_q, &wave_type, portMAX_DELAY);
     }
-    delay(10);
 }
