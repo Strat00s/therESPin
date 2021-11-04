@@ -15,6 +15,8 @@
 
 using namespace std;
 
+//TODO fix display crap
+
 #define TABLE_SIZE 65536 //table size for calculations (wave samples) -> how many waves can be created
 #define AMPLITUDE 0.1 * 16384
 #define MAX_SKEW 100   //max skew for triangle wave
@@ -22,10 +24,6 @@ using namespace std;
 #define SAMPLE_RATE 44100 //audio sample rate
 #define MIN_FREQ 170.0
 #define MAX_FREQ 440.0
-
-
-TwoWire i2c_one(0);
-TwoWire i2c_two(1);
 
 ESP32Encoder encoder;   //encoder
 VL53L0X sensor1;
@@ -167,10 +165,10 @@ void setup(void) {
     menu.addByName("root", "Duty cycle", counter, 0, 100, &target_duty_cycle);
 
     Wire.begin(SDA, SCL, 100000);
-    Wire1.begin(19, 18, 100000);
+    //Wire1.begin(19, 18, 100000);
 
-    sensor1.setBus(&Wire1);
-    sensor2.setBus(&Wire1);
+    //sensor1.setBus(&Wire1);
+    //sensor2.setBus(&Wire1);
     registerSensor(4, 4, &sensor1);
     registerSensor(0, 0, &sensor2);
     
