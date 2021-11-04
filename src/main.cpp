@@ -11,6 +11,8 @@
 #include <Wire.h>
 #include <iostream>
 
+#include "MenuLib/menu.hpp"
+
 using namespace std;
 
 #define TABLE_SIZE 65536 //table size for calculations (wave samples) -> how many waves can be created
@@ -22,13 +24,6 @@ using namespace std;
 #define MAX_FREQ 440.0
 
 ESP32Encoder encoder;   //encoder
-//queues for sending data between tasks
-
-//fix the queues (sine waves gets broken for some reason)
-QueueHandle_t type_q;
-QueueHandle_t freq_q;
-QueueHandle_t ampl_q;
-QueueHandle_t skew_q;
 VL53L0X sensor1;
 VL53L0X sensor2;
 
@@ -90,48 +85,13 @@ void playTask(void *params) {
     printf("playTask default amplitude: %f\n", AMPLITUDE);
 
 
-    //int old_type = 0;
     while (true) {
-        //do "math" if there are items in queue
-        //frequency
-        //if (uxQueueMessagesWaiting(freq_q)) {
-        //    xQueueReceive(freq_q, &target_frequency, 0);
-        //    //delta = (frequency * TABLE_SIZE) / (float)SAMPLE_RATE;
-        //}
-
-        //amplitude
-        //if (uxQueueMessagesWaiting(ampl_q)) {
-        //    xQueueReceive(ampl_q, &target_amplitude, 0);
-        //}
-
-        //wave type
-        //if (uxQueueMessagesWaiting(type_q)) {
-        //    xQueueReceive(type_q, &type, 0);
-        //}
-        //skew
-        //if (uxQueueMessagesWaiting(skew_q)) {
-        //    xQueueReceive(skew_q, &skew, 0);
-        //    //t_start_index = 0;
-        //    t_peak_index = (0 * skew + (TABLE_SIZE / 2) * (MAX_SKEW - skew)) / MAX_SKEW;
-        //    t_trough_index = TABLE_SIZE - t_peak_index;
-        //    //t_end_index = TABLE_SIZE;
-        //    rise_delta = (float)amplitude / t_peak_index;
-        //    fall_delta = (float)amplitude / ((t_trough_index - t_peak_index) / 2);
-        //}
-
-
-        //uint16_t pos = uint32_t(i * delta) % TABLE_SIZE;    //skip
         frequency += 0.05 * (target_frequency - frequency);
         delta = (frequency * TABLE_SIZE) / SAMPLE_RATE;
         pos += delta;
 
-        //INFO sine wave works best alone only with amplitude and frequency (queues)
         //sine
         if (target_wave_type == 0) {
-            //if (old_type != type) {
-            //    frequency = target_frequency;
-            //    pos = 0;
-            //}
             int_sample = (int16_t)(amplitude * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * pos));   //calculate sine * amplitude
         }
 
@@ -158,7 +118,6 @@ void playTask(void *params) {
             else
                 int_sample = (int16_t)(-amplitude + rise_delta * (pos - t_trough_index));
         }
-        //old_type = type;
 
 
         //INFO temporary amplitude fix???
@@ -168,7 +127,6 @@ void playTask(void *params) {
         
         size_t i2s_bytes_write;
         i2s_write(I2S_NUM_1, &int_sample, sizeof(uint16_t), &i2s_bytes_write, portMAX_DELAY);
-        //printf("%d,%d\n", int_sample, pos);
 
         //INFO fix for other wave types (and generaly for overflow)
         if (pos >= TABLE_SIZE)
@@ -187,12 +145,6 @@ void setup(void) {
     
     sensor1.startContinuous();
     sensor2.startContinuous();
-    freq_q = xQueueCreate(1, sizeof(float));
-    ampl_q = xQueueCreate(1, sizeof(float));
-    
-    //create queues
-    type_q = xQueueCreate(1, sizeof(int));
-    skew_q = xQueueCreate(1, sizeof(int));
 
     //encoder setup
     ESP32Encoder::useInternalWeakPullResistors=UP;
@@ -243,8 +195,6 @@ int old_type = 0;
 int wave_type = 0;
 
 //TODO input smoothing
-
-//TODO //WARNING //FIX find out why using multiple queues at the same time sometimes causes sine choppines 
 void loop(void) {
     int len1 = sensor1.readRangeContinuousMillimeters();
     int len2 = sensor2.readRangeContinuousMillimeters();
@@ -254,11 +204,8 @@ void loop(void) {
         if (len1 > 800) len1 = 800;
         if (old_len1 - len1) {
             old_len1 = len1;
-            //float frequency = (float)(map(len1, 60, 800, MIN_FREQ * 100, MAX_FREQ * 100)) / 100.0;
             target_frequency = (float)(map(len1, 60, 800, MIN_FREQ * 100, MAX_FREQ * 100)) / 100.0;
             printf("Distance: %d freq: %f\n", len1, target_frequency);
-            //if (!uxQueueMessagesWaiting(freq_q))
-            //    xQueueSend(freq_q, &frequency, portMAX_DELAY);
         }
     }
 
@@ -267,14 +214,9 @@ void loop(void) {
         if (len2 > 800) len2 = 800;
         if (old_len2 != len2) {
             old_len2 = len2;
-            //float amplitude = (float)(map(len2, 60, 800, 0, 100)) / 100.0;
-            //amplitude *= 16384;
-            
+
             target_amplitude = ((float)(map(len2, 60, 800, 5, 20)) / 100.0) * 16384;
             printf("Distance: %d ampl: %f\n", len2, target_amplitude);
-            
-            //if (!uxQueueMessagesWaiting(ampl_q))
-            //    xQueueSend(ampl_q, &amplitude, portMAX_DELAY);
         }
     }
 
@@ -289,8 +231,6 @@ void loop(void) {
         target_duty_cycle = enc;
         printf("Target skew: %d\n", target_skew);
         printf("Target dc: %d\n", target_duty_cycle);
-        //if (!uxQueueMessagesWaiting(skew_q))
-        //    xQueueSend(skew_q, &enc, portMAX_DELAY);
     }
 
     //read buttons and queue desired wave type
@@ -307,7 +247,5 @@ void loop(void) {
             default: printf("unknown\n");  break;
         }
         target_wave_type = wave_type;
-        //if (!uxQueueMessagesWaiting(type_q))
-        //    xQueueSend(type_q, &wave_type, portMAX_DELAY);
     }
 }
