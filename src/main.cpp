@@ -15,7 +15,11 @@
 
 using namespace std;
 
-//TODO fix display crap
+//TODO display in own task has to be pinned to single core
+//TODO own task for sensors
+//TODO wait for i2s to ask for data
+//TODO make a class for i2s?
+
 
 #define TABLE_SIZE 65536 //table size for calculations (wave samples) -> how many waves can be created
 #define AMPLITUDE 0.1 * 16384
@@ -48,6 +52,8 @@ float target_amplitude = AMPLITUDE;
 int target_wave_type = 0;
 int target_skew = 50;
 int target_duty_cycle = 50;
+int target_min_freq = MIN_FREQ;
+int target_max_freq = MAX_FREQ;
 
 //wave type switching
 //int old_type = 0;
@@ -64,10 +70,91 @@ void registerSensor(int enable_pin, uint8_t address, VL53L0X *sensor) {
     sensor->setMeasurementTimingBudget(20000);  //change timing for faster refresh
 }
 
+void sensorTask(void *params) {
+    int len1, len2;
+    int old_len1 = 0;
+    int old_len2 = 0;
+
+    deque<int> sen1_smoother = {0, 0, 0, 0, 0};
+    deque<int> sen2_smoother = {0, 0, 0, 0, 0};
+
+    while(true) {
+        //Smoothing options:
+        //Simple average
+        //len = sensor.readRangeContinuousMillimeters();
+        //sen_smoother.pop_front();
+        //sen_smoother.push_back(len);
+        //len = 0;
+        //for (int i = 0; i < sen_smoother.size(); i++) {
+        //    len += sen1_smoother[i];
+        //}
+        //len /= 5;
+        //len -> result
+        //
+        //Moving average???
+        //len = sensor.readRangeContinuousMillimeters();
+        //sen_smoother.pop_front();
+        //len = 0;
+        //for (int i = 0; i < sen_smoother.size(); i++) {
+        //    len += sen1_smoother[i];
+        //}
+        //len /= 5;
+        //sen_smoother.push_back(len);
+        //len -> result
+
+        len1 = sensor1.readRangeContinuousMillimeters();
+        cout << "Sensor 1 value: " << len1 << " smoothed: ";
+        sen1_smoother.pop_front();
+        for (int i = 0; i < sen1_smoother.size(); i++) {
+            len1 += sen1_smoother[i];
+        }
+        len1 /= 5;
+        sen1_smoother.push_back(len1);
+        cout << len1 << endl;
+        if (len1 < 1000) {
+            if (len1 < 60) len1 = 60;
+            if (len1 > 800) len1 = 800;
+            if (old_len1 - len1) {
+                old_len1 = len1;
+                target_frequency = (float)(map(len1, 60, 800, target_min_freq * 100, target_max_freq * 100)) / 100.0;
+                printf("Distance: %d freq: %f\n", len1, target_frequency);
+            }
+        }
+
+        len2 = sensor2.readRangeContinuousMillimeters();
+        cout << "Sensor 2 value: " << len2 << " smoothed: ";
+        sen2_smoother.pop_front();
+        for (int i = 0; i < sen2_smoother.size(); i++) {
+            len2 += sen2_smoother[i];
+        }
+        len2 /= 5;
+        sen2_smoother.push_back(len2);
+        cout << len2 << endl;
+        if (len2 < 1000) {
+            if (len2 < 60) len2 = 60;
+            if (len2 > 800) len2 = 800;
+            if (old_len2 != len2) {
+                old_len2 = len2;
+                target_amplitude = ((float)(map(len2, 60, 800, 5, 20)) / 100.0) * 16384;
+                printf("Distance: %d ampl: %f\n", len2, target_amplitude);
+            }
+        }
+    }
+}
+
 void menuTask(void *params) {
+    u8g2.begin();
+    u8g2.setFont(u8g2_font_6x10_mf);   //font dimensions: 11x11
+    u8g2.clearBuffer();
+
+    menu.begin();   //start menu
     menu.addByName("root", "Wave", picker, &target_wave_type, {"sine", "square", "triangle"});
     menu.addByName("root", "Skew", counter, 0, 100, &target_skew);
     menu.addByName("root", "Duty cycle", counter, 0, 100, &target_duty_cycle);
+    menu.addByName("root", "Frequency range", "F. range");
+    menu.addByName("Frequency range", "Minimum", counter, 0, 22049, &target_min_freq);
+    menu.addByName("Frequency range", "Maximum", counter, 1, 22050, &target_max_freq);
+
     int position = 0;
     bool select = false;
 
@@ -160,37 +247,20 @@ void playTask(void *params) {
 }
 
 void setup(void) {
-    menu.addByName("root", "Wave", picker, &target_wave_type, {"sine", "square", "triangle"});
-    menu.addByName("root", "Skew", counter, 0, 100, &target_skew);
-    menu.addByName("root", "Duty cycle", counter, 0, 100, &target_duty_cycle);
+    Wire.begin(SDA, SCL, 100000);   //display wire
+    Wire1.begin(18, 19);            //sensors wire
 
-    Wire.begin(SDA, SCL, 100000);
-    //Wire1.begin(19, 18, 100000);
-
-    //sensor1.setBus(&Wire1);
-    //sensor2.setBus(&Wire1);
-    registerSensor(4, 4, &sensor1);
-    registerSensor(0, 0, &sensor2);
-    
+    sensor1.setBus(&Wire1);
+    sensor2.setBus(&Wire1);
+    registerSensor(4, 18, &sensor1);
+    registerSensor(0, 19, &sensor2);
     sensor1.startContinuous();
     sensor2.startContinuous();
 
-    u8g2.begin();
-    u8g2.setFont(u8g2_font_6x10_mf);   //font dimensions: 11x11
-    u8g2.clearBuffer();
-
-    ESP32Encoder::useInternalWeakPullResistors=UP;
     encoder.attachSingleEdge(36, 39);
     encoder.setFilter(1023);
     encoder.clearCount();
-
-    menu.begin();   //start menu
-
-    //
     pinMode(23, INPUT_PULLUP);
-    //pinMode(9 , INPUT_PULLUP);
-    //pinMode(10, INPUT_PULLUP);
-    //pinMode(11, INPUT_PULLUP); 
 
     // i2s pins
     i2s_pin_config_t i2sPins = {
@@ -211,57 +281,21 @@ void setup(void) {
         .dma_buf_len = 64,
         .use_apll = true};
 
-    //install and start i2s driver
-    i2s_driver_install(I2S_NUM_1, &i2sConfig, 0, NULL);
-    // set up the i2s pins
-    i2s_set_pin(I2S_NUM_1, &i2sPins);
-    // clear the DMA buffers
-    i2s_zero_dma_buffer(I2S_NUM_1);
+    i2s_driver_install(I2S_NUM_1, &i2sConfig, 0, NULL); //install and start i2s driver
+    i2s_set_pin(I2S_NUM_1, &i2sPins);                   //set up the i2s pins
+    i2s_zero_dma_buffer(I2S_NUM_1);                     //clear the DMA buffers
     //i2s_set_clk(I2S_NUM_1, SAMPLE_RATE, I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_MONO);
 
     TaskHandle_t task;
-    xTaskCreate(playTask, "play_task", 100000, NULL, 1, &task);   //create task
+    xTaskCreate(playTask, "play_task", 10000, NULL, 1, &task);   //create task
 
     TaskHandle_t menu_task;
-    xTaskCreate(menuTask, "menu_task", 100000, NULL, 1, &menu_task);   //create task
-}
+    xTaskCreatePinnedToCore(menuTask, "menu_task", 10000, NULL, 1, &menu_task, 1);   //create task
 
-int old_len1 = 0;
-int old_len2 = 0;
-int position = 0;
-    bool select = false;
+    TaskHandle_t sensor_task;
+    xTaskCreate(sensorTask, "sensor_task", 10000, NULL, 1, &sensor_task);
+}
 
 //TODO input smoothing
 void loop(void) {
-    int len1 = sensor1.readRangeContinuousMillimeters();
-    int len2 = sensor2.readRangeContinuousMillimeters();
-    if (len1 < 1000) {
-        if (len1 < 60) len1 = 60;
-        if (len1 > 800) len1 = 800;
-        if (old_len1 - len1) {
-            old_len1 = len1;
-            target_frequency = (float)(map(len1, 60, 800, MIN_FREQ * 100, MAX_FREQ * 100)) / 100.0;
-            printf("Distance: %d freq: %f\n", len1, target_frequency);
-        }
-    }
-
-    if (len2 < 1000) {
-        if (len2 < 60) len2 = 60;
-        if (len2 > 800) len2 = 800;
-        if (old_len2 != len2) {
-            old_len2 = len2;
-
-            target_amplitude = ((float)(map(len2, 60, 800, 5, 20)) / 100.0) * 16384;
-            printf("Distance: %d ampl: %f\n", len2, target_amplitude);
-        }
-    }
-
-    if (!digitalRead(23)) {
-        while(!digitalRead(23));
-            select = true;
-        }
-    position = encoder.getCount();
-    menu.render(&position, &select);
-    encoder.setCount(position);
-    
 }
