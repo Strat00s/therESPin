@@ -83,7 +83,7 @@ class Menu {
          * @param parent_id parent id
          * @return Entry id on succes, -1 on failure 
          */
-        int addByID(int parent_id, std::string name, type_t item_type, int min, int max, int *start);
+        int addByID(int parent_id, std::string name, type_t item_type, int min, int max, int *start, int *modifier = nullptr);
         
         /** @brief Create and add picker/toggle item entry
          * 
@@ -105,7 +105,7 @@ class Menu {
          * @param function custom function
          * @return Entry id on succes, -1 on failure 
          */
-        int addByID(int parent_id, std::string name, int min = 0, int max = 0, int *data = nullptr, std::vector<std::string> options = {}, Entry *(*function)(int *, bool *, Entry *) = nullptr); //create custom item
+        int addByID(int parent_id, std::string name, int min = 0, int max = 0, int *data = nullptr, int *modifier = nullptr, std::vector<std::string> options = {}, Entry *(*function)(int *, bool *, Entry *) = nullptr); //create custom item
 
         //add entries to parents by name
         /** @brief Add copy of and already created entry 
@@ -136,7 +136,7 @@ class Menu {
          * @param start start index pointer
          * @return Entry id on succes, -1 on failure
          */
-        int addByName(std::string parent_name, std::string name, type_t item_type, int min, int max, int *start);
+        int addByName(std::string parent_name, std::string name, type_t item_type, int min, int max, int *start, int *modifier = nullptr);
         
         /** @brief Create and add picker/toggle item entry
          * 
@@ -160,7 +160,7 @@ class Menu {
          * @param function custom function pointer
          * @return Entry id on succes, -1 on failure 
          */
-        int addByName(std::string parent_name, std::string name, int min = 0, int max = 0, int *data = nullptr, std::vector<std::string> options = {}, Entry *(*function)(int *, bool *, Entry *) = nullptr); //create custom item
+        int addByName(std::string parent_name, std::string name, int min = 0, int max = 0, int *data = nullptr, int *modifier = nullptr, std::vector<std::string> options = {}, Entry *(*function)(int *, bool *, Entry *) = nullptr); //create custom item
 
         
         /**

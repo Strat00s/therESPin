@@ -10,7 +10,7 @@ Entry::Entry(U8G2 *u8g2, std::string name, std::string header, Entry *(*function
     this->function = function;
 }
 
-Entry::Entry(U8G2 *u8g2, std::string name, type_t item_type, int min, int max, int *start) {
+Entry::Entry(U8G2 *u8g2, std::string name, type_t item_type, int min, int max, int *start, int *modifier) {
     this->u8g2 = u8g2;
     this->name = name;
     item.min = min;
@@ -21,6 +21,7 @@ Entry::Entry(U8G2 *u8g2, std::string name, type_t item_type, int min, int max, i
         *start = item.min;
     item.type = item_type;
     item.value = start;
+    item.modifier = modifier;
     entry_type = item_type;
 }
 
@@ -36,14 +37,16 @@ Entry::Entry(U8G2 *u8g2, std::string name, type_t item_type, int *start, std::ve
     item.options = options;
     item.type = item_type;
     item.value = start;
+    item.modifier = nullptr;
     entry_type = item_type;
 }
 
-Entry::Entry(U8G2 *u8g2, std::string name, int min, int max, int *data, std::vector<std::string> options, Entry *(*function)(int *, bool *, Entry *)) {
+Entry::Entry(U8G2 *u8g2, std::string name, int min, int max, int *data, int *modifier, std::vector<std::string> options, Entry *(*function)(int *, bool *, Entry *)) {
     this->u8g2 = u8g2;
     this->name = name;
     item.type = custom;
     item.value = data;
+    item.modifier = modifier;
     item.min = min;
     item.max = max;
     item.options = options;
@@ -202,11 +205,16 @@ Entry *Entry::drawItem(int *position, bool *select) {
         *select = true; //return immediately
     }
     else {
-        if (*position > item.max)
-            *position = item.max;
-        if (*position < item.min)
-            *position = item.min;
-        *item.value = *position;
+        int modifier = (item.modifier == nullptr ? 1 : *item.modifier);
+        if (*item.value < *position)
+            *item.value += modifier;
+        else if (*item.value > *position)
+            *item.value -= modifier;
+        if (*item.value > item.max)
+            *item.value = item.max;
+        if (*item.value < item.min)
+            *item.value = item.min;
+        *position = *item.value;
     }
     
     drawItemData(item, line);

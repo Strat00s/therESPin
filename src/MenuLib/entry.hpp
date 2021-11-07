@@ -27,6 +27,7 @@ typedef struct {
     type_t type;
     int min;
     int max;
+    int *modifier;
     int *value;
     std::vector<std::string> options;
     bool blink;
@@ -105,7 +106,7 @@ class Entry {
          * @param max max item value
          * @param start start index pointer
          */
-        Entry(U8G2 *u8g2, std::string name, type_t item_type, int min, int max, int *start);                                    //counter item
+        Entry(U8G2 *u8g2, std::string name, type_t item_type, int min, int max, int *start, int *modifier = nullptr);                                    //counter item
 
         /** @brief Construct a new picker/toggle item Entry object
          * 
@@ -127,7 +128,7 @@ class Entry {
          * @param options vector of strings containing options
          * @param function custom function pointer
          */
-        Entry(U8G2 *u8g2, std::string name, int min = 0, int max = 0, int *data = nullptr, std::vector<std::string> options = {}, Entry *(*function)(int *, bool *, Entry *) = nullptr); //custom item
+        Entry(U8G2 *u8g2, std::string name, int min = 0, int max = 0, int *data = nullptr, int *modifier = nullptr, std::vector<std::string> options = {}, Entry *(*function)(int *, bool *, Entry *) = nullptr); //custom item
 
         /** @brief Destroy the Entry object
          * 

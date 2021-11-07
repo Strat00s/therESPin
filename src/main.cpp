@@ -29,6 +29,8 @@ using namespace std;
 #define SAMPLE_RATE 44100 //audio sample rate
 #define MIN_FREQ 65.41
 #define MAX_FREQ 3951.07
+//#define MAX_FREQ 22050
+
 
 enum waves {
     sine,
@@ -56,6 +58,8 @@ int target_skew = 50;
 int target_duty_cycle = 50;
 int target_min_freq = MIN_FREQ;
 int target_max_freq = MAX_FREQ;
+int target_sample_rate = SAMPLE_RATE;
+int target_table_size = TABLE_SIZE;
 bool update_menu = false;
 bool started = false;
 
@@ -92,7 +96,7 @@ Entry *startFunction(int *position, bool *select, Entry *entry) {
     return entry;
 }
 
-
+//TODO store data in flash???
 /*----(Tasks)----*/
 //menu task for menu setup and execution
 //TODO refactor
@@ -102,20 +106,44 @@ void menuTask(void *params) {
     u8g2.clearBuffer();
 
     int start_data = 0;
+    int settings_mod = 1;
+    int settings_mod_data = 2;
 
     menu.begin();   //start menu
-    menu.addByName("root", "Start", 0, 0, &start_data, {}, &startFunction);
+    menu.addByName("root", "Status", toggle, &start_data, {"stopped", "running"});
     menu.addByName("root", "Wave", picker, &target_wave_type, {"sine", "square", "triangle"});
     menu.addByName("root", "Skew", counter, 0, 100, &target_skew);
     menu.addByName("root", "Duty cycle", counter, 0, 100, &target_duty_cycle);
-    menu.addByName("root", "Frequency range", "F. range");
-    menu.addByName("Frequency range", "Minimum", counter, 0, 22049, &target_min_freq);
-    menu.addByName("Frequency range", "Maximum", counter, 1, 22050, &target_max_freq);
+    menu.addByName("root", "Settings", "Settings");
+    menu.addByName("Settings", "Steps", picker, &settings_mod_data, {"1", "10", "100", "1000"});
+    menu.addByName("Settings", "Table size", counter, 32, 65536, &target_table_size, &settings_mod);
+    menu.addByName("Settings", "Sample rate", counter, 44100, 96000, &target_sample_rate, &settings_mod);
+    menu.addByName("Settings", "Frequency range", "F. range");
+    menu.addByName("Frequency range", "Minimum", counter, 0, 22049, &target_min_freq, &settings_mod);
+    menu.addByName("Frequency range", "Maximum", counter, 1, 22050, &target_max_freq, &settings_mod);
 
     int position = 0;
     bool select = false;
 
+    bool running = false;
+
     while(true) {
+        switch (settings_mod_data) {
+            case 0: settings_mod = 1;    break;
+            case 1: settings_mod = 10;   break;
+            case 2: settings_mod = 100;  break;
+            case 3: settings_mod = 1000; break;
+        }
+
+        if (start_data && !running) {
+            i2s_start(I2S_NUM_1);
+            running = true;
+        }
+        if (!start_data && running) {
+            i2s_stop(I2S_NUM_1);
+            running = false;
+        }
+
         if (!digitalRead(23)) {
         while(!digitalRead(23));
             select = true;
@@ -156,7 +184,7 @@ void sensorTask(void *params) {
         for (int i = 0; i < sens1_array.size(); i++) {
             len1 += sens1_array[i];
         }
-        len1 /= 5;
+        len1 /= 3;
         if (len1 < 1000) {
             if (len1 < 60) len1 = 60;
             if (len1 > 800) len1 = 800;
@@ -173,7 +201,7 @@ void sensorTask(void *params) {
         for (int i = 0; i < sens2_array.size(); i++) {
             len2 += sens2_array[i];
         }
-        len2 /= 5;
+        len2 /= 3;
         if (len2 < 1000) {
             if (len2 < 60) len2 = 60;
             if (len2 > 800) len2 = 800;
@@ -201,7 +229,9 @@ void playTask(void *params) {
     //this is somehow required?????????????
     //printf("playTask default frequency: %f\n", frequency);
     //printf("playTask default amplitude: %f\n", AMPLITUDE);
-    delay(1);
+    delay(100);
+
+    //TODO replacing SAMPLE_RATE and TABLE_SIZE makes this not report to watchdog
 
     while (true) {
         //smooth frequency "stitching"
@@ -292,7 +322,7 @@ void setup(void) {
 
 
     //create tasks
-    xTaskCreatePinnedToCore(menuTask, "menu_task", 10000, NULL, 1, &menu_handle, 1);    //menu task needs to be pinned to a core, to avoid garbage
+    xTaskCreatePinnedToCore(menuTask, "menu_task", 20000, NULL, 1, &menu_handle, 1);    //menu task needs to be pinned to a core, to avoid garbage
     xTaskCreate(sensorTask, "sensor_task", 10000, NULL, 1, &sensor_handle);
     xTaskCreate(playTask, "play_task", 10000, NULL, 1, &play_handle);
 }

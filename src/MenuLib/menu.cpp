@@ -64,8 +64,8 @@ int Menu::addByID(int parent_id, std::string name, std::string header, Entry *(*
     return entrySetup(tmp, parent_id);
 }
 
-int Menu::addByID(int parent_id, std::string name, type_t item_type, int min, int max, int *start){
-    Entry *tmp = new Entry(this->u8g2, name, item_type, min, max, start);
+int Menu::addByID(int parent_id, std::string name, type_t item_type, int min, int max, int *start, int *modifier){
+    Entry *tmp = new Entry(this->u8g2, name, item_type, min, max, start, modifier);
     return entrySetup(tmp, parent_id);
 }
 
@@ -74,8 +74,8 @@ int Menu::addByID(int parent_id, std::string name, type_t item_type, int *start,
     return entrySetup(tmp, parent_id);
 }
 
-int Menu::addByID(int parent_id, std::string name, int min, int max, int *data, std::vector<std::string> options, Entry *(*function)(int *, bool *, Entry *)){
-    Entry *tmp = new Entry(this->u8g2, name, min, max, data, options, function);
+int Menu::addByID(int parent_id, std::string name, int min, int max, int *data, int *modifier, std::vector<std::string> options, Entry *(*function)(int *, bool *, Entry *)){
+    Entry *tmp = new Entry(this->u8g2, name, min, max, data, modifier, options, function);
     return entrySetup(tmp, parent_id);
 }
 
@@ -88,8 +88,8 @@ int Menu::addByName(std::string parent_name, std::string name, std::string heade
     return entrySetup(tmp, -1, parent_name);
 }
 
-int Menu::addByName(std::string parent_name, std::string name, type_t item_type, int min, int max, int *start) {
-    Entry *tmp = new Entry(this->u8g2, name, item_type, min, max, start);
+int Menu::addByName(std::string parent_name, std::string name, type_t item_type, int min, int max, int *start, int *modifier) {
+    Entry *tmp = new Entry(this->u8g2, name, item_type, min, max, start, modifier);
     return entrySetup(tmp,  -1, parent_name);
 }
 
@@ -98,8 +98,8 @@ int Menu::addByName(std::string parent_name, std::string name, type_t item_type,
     return entrySetup(tmp, -1, parent_name);
 }
 
-int Menu::addByName(std::string parent_name, std::string name, int min, int max, int *data, std::vector<std::string> options, Entry *(*function)(int *, bool *, Entry *)) {
-    Entry *tmp = new Entry(this->u8g2, name, min, max, data, options, function);
+int Menu::addByName(std::string parent_name, std::string name, int min, int max, int *data, int *modifier, std::vector<std::string> options, Entry *(*function)(int *, bool *, Entry *)) {
+    Entry *tmp = new Entry(this->u8g2, name, min, max, data, modifier, options, function);
     return entrySetup(tmp, -1, parent_name);
 }
 
