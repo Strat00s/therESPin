@@ -30,28 +30,25 @@ using namespace std;
 #define MIN_FREQ 65.41
 #define MAX_FREQ 3951.07
 
+enum waves {
+    sine,
+    square,
+    triangle
+};
+
+//classes
 ESP32Encoder encoder;   //encoder
 VL53L0X sensor1;
 VL53L0X sensor2;
-
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
-//U8G2_SSD1306_128X64_NONAME_F_SW_I2C u8g2(U8G2_R0, 7, 6, U8X8_PIN_NONE);
-
 Menu menu(&u8g2);
 
+//task handles
 TaskHandle_t menu_handle;
 TaskHandle_t sensor_handle;
 TaskHandle_t play_handle;
 
-
-//int skew = 50;
-//int t_start_index = 0;
-//int t_peak_index = (0 * skew + (TABLE_SIZE / 2) * (MAX_SKEW - skew)) / MAX_SKEW;
-//int t_trough_index = TABLE_SIZE - t_peak_index;
-//int t_end_index = TABLE_SIZE;
-//float rise_delta = (float)AMPLITUDE / t_peak_index;
-//float fall_delta = (float)AMPLITUDE / ((t_trough_index - t_peak_index) / 2);
-
+//global variables for data exchange
 float target_frequency = MIN_FREQ;
 float target_amplitude = AMPLITUDE;
 int target_wave_type = 0;
@@ -59,11 +56,6 @@ int target_skew = 50;
 int target_duty_cycle = 50;
 int target_min_freq = MIN_FREQ;
 int target_max_freq = MAX_FREQ;
-
-//wave type switching
-//int old_type = 0;
-//int wave_type = 0;
-
 bool update_menu = false;
 bool started = false;
 
@@ -194,76 +186,65 @@ void sensorTask(void *params) {
 }
 
 //main task for "playing" waves
-//TODO refactor
-//TODO maybe use ints only???
 void playTask(void *params) {
     //triangle config
-    int t_peak_index = (0 * target_skew + (TABLE_SIZE / 2) * (MAX_SKEW - target_skew)) / MAX_SKEW;
-    int t_trough_index = TABLE_SIZE - t_peak_index;
-    //int t_end_index = TABLE_SIZE;
-    float rise_delta = (float)AMPLITUDE / t_peak_index;
-    float fall_delta = (float)AMPLITUDE / ((t_trough_index - t_peak_index) / 2);
+    int t_peak_index, t_trough_index;
+    float rise_delta, fall_delta;
 
-    //int i = 0;  //indexing for calculations
-
-    //int type = 0;   //current wave type
-    //float target_frequency = MIN_FREQ; //current frequency
     float frequency = MIN_FREQ;
-    //float target_amplitude = AMPLITUDE;
     float amplitude = AMPLITUDE;
     float delta;
 
-    uint16_t pos = 0;
-    int16_t int_sample;
+    uint16_t pos = 0;   //starting position
+    int16_t int_sample; //final sample
 
-    printf("playTask default frequency: %f\n", frequency);
-    printf("playTask default amplitude: %f\n", AMPLITUDE);
-
+    //this is somehow required?????????????
+    //printf("playTask default frequency: %f\n", frequency);
+    //printf("playTask default amplitude: %f\n", AMPLITUDE);
+    delay(1);
 
     while (true) {
         //smooth frequency "stitching"
-        frequency += 0.05 * (target_frequency - frequency); //"slowly" aproach our desired frequency
+        frequency += 0.01 * (target_frequency - frequency); //"slowly" aproach our desired frequency
         delta = (frequency * TABLE_SIZE) / SAMPLE_RATE;     //calculate delta - change in our non-existatn lookup table
         pos += delta;                                       //move to next position
 
-        //sine
-        if (target_wave_type == 0) {
-            int_sample = (int16_t)(amplitude * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * pos));   //calculate sine * amplitude
+        //generate apropriate wave type
+        switch (target_wave_type) {
+            case sine:
+                int_sample = (int16_t)(amplitude * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * pos));   //calculate sine * amplitudebreak;
+                break;
+
+            case square:
+                if (pos < (TABLE_SIZE / 100 * target_duty_cycle))
+                    int_sample = (int16_t)amplitude;
+                else
+                    int_sample = (int16_t)(-amplitude);
+                break;
+
+            case triangle:
+                t_peak_index = (0 * target_skew + (TABLE_SIZE / 2) * (MAX_SKEW - target_skew)) / MAX_SKEW;
+                t_trough_index = TABLE_SIZE - t_peak_index;
+                rise_delta = (float)amplitude / t_peak_index;
+                fall_delta = (float)amplitude / ((t_trough_index - t_peak_index) / 2);
+                if (pos < t_peak_index) 
+                    int_sample =  (int16_t)(rise_delta * pos);
+                else if (pos < t_trough_index)
+                    int_sample = (int16_t)(amplitude - fall_delta * (pos - t_peak_index));
+                else
+                    int_sample = (int16_t)(-amplitude + rise_delta * (pos - t_trough_index));
+                break;
         }
 
-        //square
-        else if (target_wave_type == 1) {
-            if (pos < (TABLE_SIZE / 100 * target_duty_cycle))
-                int_sample = (int16_t)amplitude;
-            else
-                int_sample = (int16_t)(-amplitude);
-        }
-
-        //TODO fix triangle amplitude (starts in the middle)
-        //triangle
-        else if (target_wave_type == 2) {
-            t_peak_index = (0 * target_skew + (TABLE_SIZE / 2) * (MAX_SKEW - target_skew)) / MAX_SKEW;
-            t_trough_index = TABLE_SIZE - t_peak_index;
-            rise_delta = (float)amplitude / t_peak_index;
-            fall_delta = (float)amplitude / ((t_trough_index - t_peak_index) / 2);
-            if (pos < t_peak_index) 
-                int_sample =  (int16_t)(rise_delta * pos);
-            else if (pos < t_trough_index)
-                int_sample = (int16_t)(amplitude - fall_delta * (pos - t_peak_index));
-            else
-                int_sample = (int16_t)(-amplitude + rise_delta * (pos - t_trough_index));
-        }
-
-
-        //INFO temporary amplitude fix???
+        //change amplitude only when going through zero
         if (int_sample == 0)
             amplitude = target_amplitude;
-        
-        
+
+        //write sample to driver
         size_t i2s_bytes_write;
         i2s_write(I2S_NUM_1, &int_sample, sizeof(uint16_t), &i2s_bytes_write, portMAX_DELAY);
 
-        //INFO fix for other wave types (and generaly for overflow)
+        //overflow fix
         if (pos >= TABLE_SIZE)
             pos = pos - TABLE_SIZE;
     }
