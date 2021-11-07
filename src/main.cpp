@@ -23,12 +23,12 @@ using namespace std;
 
 
 #define TABLE_SIZE 65536 //table size for calculations (wave samples) -> how many waves can be created
-#define AMPLITUDE 0.1 * 16384
+#define AMPLITUDE 0.1 * 16384   //TODO proper amplitude
 #define MAX_SKEW 100   //max skew for triangle wave
 
 #define SAMPLE_RATE 44100 //audio sample rate
-#define MIN_FREQ 170.0
-#define MAX_FREQ 440.0
+#define MIN_FREQ 65.41
+#define MAX_FREQ 3951.07
 
 ESP32Encoder encoder;   //encoder
 VL53L0X sensor1;
@@ -152,8 +152,9 @@ void sensorTask(void *params) {
     int old_len2 = 0;
 
     //smoothing vectors
-    deque<int> sens1_array = {0, 0, 0, 0, 0};
-    deque<int> sens2_array = {0, 0, 0, 0, 0};
+    //TODO add changable smoothing size???
+    deque<int> sens1_array = {0, 0, 0};
+    deque<int> sens2_array = {0, 0, 0};
 
     while(true) {
         len1 = sensor1.readRangeContinuousMillimeters();
@@ -194,10 +195,9 @@ void sensorTask(void *params) {
 
 //main task for "playing" waves
 //TODO refactor
+//TODO maybe use ints only???
 void playTask(void *params) {
     //triangle config
-    //int skew = 0;
-    //int t_start_index = 0;
     int t_peak_index = (0 * target_skew + (TABLE_SIZE / 2) * (MAX_SKEW - target_skew)) / MAX_SKEW;
     int t_trough_index = TABLE_SIZE - t_peak_index;
     //int t_end_index = TABLE_SIZE;
@@ -221,9 +221,10 @@ void playTask(void *params) {
 
 
     while (true) {
-        frequency += 0.05 * (target_frequency - frequency);
-        delta = (frequency * TABLE_SIZE) / SAMPLE_RATE;
-        pos += delta;
+        //smooth frequency "stitching"
+        frequency += 0.05 * (target_frequency - frequency); //"slowly" aproach our desired frequency
+        delta = (frequency * TABLE_SIZE) / SAMPLE_RATE;     //calculate delta - change in our non-existatn lookup table
+        pos += delta;                                       //move to next position
 
         //sine
         if (target_wave_type == 0) {
@@ -243,7 +244,6 @@ void playTask(void *params) {
         else if (target_wave_type == 2) {
             t_peak_index = (0 * target_skew + (TABLE_SIZE / 2) * (MAX_SKEW - target_skew)) / MAX_SKEW;
             t_trough_index = TABLE_SIZE - t_peak_index;
-           //t_end_index = TABLE_SIZE;
             rise_delta = (float)amplitude / t_peak_index;
             fall_delta = (float)amplitude / ((t_trough_index - t_peak_index) / 2);
             if (pos < t_peak_index) 
