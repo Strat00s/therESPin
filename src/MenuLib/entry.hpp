@@ -5,6 +5,7 @@
 #include <vector>
 
 //TODO move macros???
+//TODO add update option
 #define FONT_WIDTH  this->u8g2->getMaxCharWidth()
 #define FONT_HEIGHT this->u8g2->getMaxCharHeight()
 #define LCD_WIDTH   this->u8g2->getDisplayWidth()

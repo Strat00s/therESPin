@@ -197,7 +197,7 @@ class Menu {
          * @param position general data parameter (used for example for cursor claculations in menus)
          * @param select select value (ok, enter)
          */
-        void render(int *position, bool *select);
+        void render(int *position, bool *select, bool update = false);
 
         /** @brief return root index (0)
          * 

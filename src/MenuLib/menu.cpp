@@ -133,8 +133,8 @@ Entry *Menu::getEntryByName(std::string name) {
 }
 
 
-void Menu::render(int *value, bool *select) {
-    if ((old_value != *value) || *select) {
+void Menu::render(int *value, bool *select, bool update) {
+    if ((old_value != *value) || *select || update) {
         current_entry = current_entry->execute(value, select, current_entry);
         old_value = *value;
     }

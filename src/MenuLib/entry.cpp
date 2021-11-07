@@ -246,15 +246,13 @@ void Entry::setFunction(Entry *(*function)(int *, bool *, Entry *)) {
 
 
 Entry *Entry::execute(int *position, bool *select, Entry *entry) {
-    Entry *tmp;
     //menu
     if (this->function == nullptr) {
         if (this->entry_type == not_item)
-            tmp = drawMenu(position, select);
+            return drawMenu(position, select);
         else
-            tmp = drawItem(position, select);
+            return drawItem(position, select);
     }
     else
-        tmp = function(position, select, entry);
-    return tmp;
+        return function(position, select, entry);
 }

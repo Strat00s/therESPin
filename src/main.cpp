@@ -15,8 +15,9 @@
 
 using namespace std;
 
-//TODO display in own task has to be pinned to single core
-//TODO own task for sensors
+//TODO general refactoring
+//TODO clean it
+
 //TODO wait for i2s to ask for data
 //TODO make a class for i2s?
 
@@ -37,6 +38,10 @@ U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
 //U8G2_SSD1306_128X64_NONAME_F_SW_I2C u8g2(U8G2_R0, 7, 6, U8X8_PIN_NONE);
 
 Menu menu(&u8g2);
+
+TaskHandle_t menu_handle;
+TaskHandle_t sensor_handle;
+TaskHandle_t play_handle;
 
 
 //int skew = 50;
@@ -59,6 +64,9 @@ int target_max_freq = MAX_FREQ;
 //int old_type = 0;
 //int wave_type = 0;
 
+bool update_menu = false;
+bool started = false;
+
 
 //sensor configuration rutine
 void registerSensor(int enable_pin, uint8_t address, VL53L0X *sensor) {
@@ -67,87 +75,44 @@ void registerSensor(int enable_pin, uint8_t address, VL53L0X *sensor) {
     sensor->init(true);             //initialize the sensor
     sensor->setAddress(address);    //set new address (required as all sensors have the same default address)
     pinMode(enable_pin, INPUT);
-    sensor->setMeasurementTimingBudget(20000);  //change timing for faster refresh
 }
 
-void sensorTask(void *params) {
-    int len1, len2;
-    int old_len1 = 0;
-    int old_len2 = 0;
-
-    deque<int> sen1_smoother = {0, 0, 0, 0, 0};
-    deque<int> sen2_smoother = {0, 0, 0, 0, 0};
-
-    while(true) {
-        //Smoothing options:
-        //Simple average
-        //len = sensor.readRangeContinuousMillimeters();
-        //sen_smoother.pop_front();
-        //sen_smoother.push_back(len);
-        //len = 0;
-        //for (int i = 0; i < sen_smoother.size(); i++) {
-        //    len += sen1_smoother[i];
-        //}
-        //len /= 5;
-        //len -> result
-        //
-        //Moving average???
-        //len = sensor.readRangeContinuousMillimeters();
-        //sen_smoother.pop_front();
-        //len = 0;
-        //for (int i = 0; i < sen_smoother.size(); i++) {
-        //    len += sen1_smoother[i];
-        //}
-        //len /= 5;
-        //sen_smoother.push_back(len);
-        //len -> result
-
-        len1 = sensor1.readRangeContinuousMillimeters();
-        cout << "Sensor 1 value: " << len1 << " smoothed: ";
-        sen1_smoother.pop_front();
-        for (int i = 0; i < sen1_smoother.size(); i++) {
-            len1 += sen1_smoother[i];
-        }
-        len1 /= 5;
-        sen1_smoother.push_back(len1);
-        cout << len1 << endl;
-        if (len1 < 1000) {
-            if (len1 < 60) len1 = 60;
-            if (len1 > 800) len1 = 800;
-            if (old_len1 - len1) {
-                old_len1 = len1;
-                target_frequency = (float)(map(len1, 60, 800, target_min_freq * 100, target_max_freq * 100)) / 100.0;
-                printf("Distance: %d freq: %f\n", len1, target_frequency);
-            }
-        }
-
-        len2 = sensor2.readRangeContinuousMillimeters();
-        cout << "Sensor 2 value: " << len2 << " smoothed: ";
-        sen2_smoother.pop_front();
-        for (int i = 0; i < sen2_smoother.size(); i++) {
-            len2 += sen2_smoother[i];
-        }
-        len2 /= 5;
-        sen2_smoother.push_back(len2);
-        cout << len2 << endl;
-        if (len2 < 1000) {
-            if (len2 < 60) len2 = 60;
-            if (len2 > 800) len2 = 800;
-            if (old_len2 != len2) {
-                old_len2 = len2;
-                target_amplitude = ((float)(map(len2, 60, 800, 5, 20)) / 100.0) * 16384;
-                printf("Distance: %d ampl: %f\n", len2, target_amplitude);
-            }
-        }
+//TODO refactor
+Entry *startFunction(int *position, bool *select, Entry *entry) {
+    if (!started) {
+        started = true;
+        update_menu = true;
+        i2s_start(I2S_NUM_1);
     }
+
+    u8g2.clearBuffer();
+    u8g2.setCursor(10, 20);
+    u8g2.printf("%f", target_frequency);
+    u8g2.sendBuffer();
+    if (*select) {
+        *select = false;
+        update_menu = false;
+        started = false;
+        i2s_stop(I2S_NUM_1);
+        entry->resetToParent(position);
+        return entry->parent();
+    }
+    return entry;
 }
 
+
+/*----(Tasks)----*/
+//menu task for menu setup and execution
+//TODO refactor
 void menuTask(void *params) {
     u8g2.begin();
     u8g2.setFont(u8g2_font_6x10_mf);   //font dimensions: 11x11
     u8g2.clearBuffer();
 
+    int start_data = 0;
+
     menu.begin();   //start menu
+    menu.addByName("root", "Start", 0, 0, &start_data, {}, &startFunction);
     menu.addByName("root", "Wave", picker, &target_wave_type, {"sine", "square", "triangle"});
     menu.addByName("root", "Skew", counter, 0, 100, &target_skew);
     menu.addByName("root", "Duty cycle", counter, 0, 100, &target_duty_cycle);
@@ -164,13 +129,71 @@ void menuTask(void *params) {
             select = true;
         }
         position = encoder.getCount();
-        menu.render(&position, &select);
+        menu.render(&position, &select, update_menu);
         encoder.setCount(position);
+        delay(1);
     }
 }
 
+//TODO refactor
+void sensorTask(void *params) {
+    //configure sensors
+    sensor1.setBus(&Wire1);
+    sensor2.setBus(&Wire1);
+    registerSensor(4, 18, &sensor1);
+    registerSensor(0, 19, &sensor2);
+    //sensor->setMeasurementTimingBudget(20000);
+    //sensor->setMeasurementTimingBudget(20000);
+    sensor1.startContinuous();
+    sensor2.startContinuous();
+
+    int len1, len2;
+    int old_len1 = 0;
+    int old_len2 = 0;
+
+    //smoothing vectors
+    deque<int> sens1_array = {0, 0, 0, 0, 0};
+    deque<int> sens2_array = {0, 0, 0, 0, 0};
+
+    while(true) {
+        len1 = sensor1.readRangeContinuousMillimeters();
+        sens1_array.pop_front();
+        sens1_array.push_back(len1);
+        len1 = 0;
+        for (int i = 0; i < sens1_array.size(); i++) {
+            len1 += sens1_array[i];
+        }
+        len1 /= 5;
+        if (len1 < 1000) {
+            if (len1 < 60) len1 = 60;
+            if (len1 > 800) len1 = 800;
+            if (old_len1 != len1) {
+                old_len1 = len1;
+                target_frequency = (float)(map(len1, 60, 800, target_min_freq * 100, target_max_freq * 100)) / 100.0;
+            }
+        }
+
+        len2 = sensor2.readRangeContinuousMillimeters();
+        sens2_array.pop_front();
+        sens2_array.push_back(len2);
+        len2 = 0;
+        for (int i = 0; i < sens2_array.size(); i++) {
+            len2 += sens2_array[i];
+        }
+        len2 /= 5;
+        if (len2 < 1000) {
+            if (len2 < 60) len2 = 60;
+            if (len2 > 800) len2 = 800;
+            if (old_len2 != len2) {
+                old_len2 = len2;
+                target_amplitude = ((float)(map(len2, 60, 800, 5, 20)) / 100.0) * 16384;
+            }
+        }
+    }
+}
 
 //main task for "playing" waves
+//TODO refactor
 void playTask(void *params) {
     //triangle config
     //int skew = 0;
@@ -234,7 +257,7 @@ void playTask(void *params) {
 
         //INFO temporary amplitude fix???
         if (int_sample == 0)
-                amplitude = target_amplitude;
+            amplitude = target_amplitude;
         
         
         size_t i2s_bytes_write;
@@ -246,30 +269,30 @@ void playTask(void *params) {
     }
 }
 
+
+
 void setup(void) {
+    //i2c configuration
     Wire.begin(SDA, SCL, 100000);   //display wire
     Wire1.begin(18, 19);            //sensors wire
 
-    sensor1.setBus(&Wire1);
-    sensor2.setBus(&Wire1);
-    registerSensor(4, 18, &sensor1);
-    registerSensor(0, 19, &sensor2);
-    sensor1.startContinuous();
-    sensor2.startContinuous();
 
+    //encoder configuration (used only inside menu)
     encoder.attachSingleEdge(36, 39);
     encoder.setFilter(1023);
     encoder.clearCount();
     pinMode(23, INPUT_PULLUP);
 
-    // i2s pins
+
+    //i2s configuration
+    //i2s pins
     i2s_pin_config_t i2sPins = {
         .bck_io_num = 16,
         .ws_io_num = 17,
         .data_out_num = 25,
         .data_in_num = -1};
     
-    // i2s config for writing both channels of I2S
+    //i2s config for writing both channels of I2S
     i2s_config_t i2sConfig = {
         .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
         .sample_rate = 44100,
@@ -282,20 +305,18 @@ void setup(void) {
         .use_apll = true};
 
     i2s_driver_install(I2S_NUM_1, &i2sConfig, 0, NULL); //install and start i2s driver
+    i2s_stop(I2S_NUM_1);                                //instantly stop the driver
     i2s_set_pin(I2S_NUM_1, &i2sPins);                   //set up the i2s pins
     i2s_zero_dma_buffer(I2S_NUM_1);                     //clear the DMA buffers
-    //i2s_set_clk(I2S_NUM_1, SAMPLE_RATE, I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_MONO);
 
-    TaskHandle_t task;
-    xTaskCreate(playTask, "play_task", 10000, NULL, 1, &task);   //create task
 
-    TaskHandle_t menu_task;
-    xTaskCreatePinnedToCore(menuTask, "menu_task", 10000, NULL, 1, &menu_task, 1);   //create task
-
-    TaskHandle_t sensor_task;
-    xTaskCreate(sensorTask, "sensor_task", 10000, NULL, 1, &sensor_task);
+    //create tasks
+    xTaskCreatePinnedToCore(menuTask, "menu_task", 10000, NULL, 1, &menu_handle, 1);    //menu task needs to be pinned to a core, to avoid garbage
+    xTaskCreate(sensorTask, "sensor_task", 10000, NULL, 1, &sensor_handle);
+    xTaskCreate(playTask, "play_task", 10000, NULL, 1, &play_handle);
 }
 
-//TODO input smoothing
+
 void loop(void) {
+    //nothing here as everything has it's own task
 }
