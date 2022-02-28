@@ -33,6 +33,11 @@ using namespace std;
 #define MAX_FREQ 3951.07
 //#define MAX_FREQ 22050
 
+#define SENSOR_L_PIN 4
+#define SENSOR_R_PIN 0
+#define SENSOR_L_ADDR 18
+#define SENSOR_R_ADDR 19
+
 
 enum waves {
     sine,
@@ -75,103 +80,16 @@ void registerSensor(int enable_pin, uint8_t address, VL53L0X *sensor) {
     pinMode(enable_pin, INPUT);
 }
 
-//TODO refactor
-Entry *startFunction(int *position, bool *select, Entry *entry) {
-    if (!started) {
-        started = true;
-        update_menu = true;
-        i2s_start(I2S_NUM_1);
-    }
-
-    u8g2.clearBuffer();
-    u8g2.setCursor(10, 20);
-    u8g2.printf("%f", target_frequency);
-    u8g2.sendBuffer();
-    if (*select) {
-        *select = false;
-        update_menu = false;
-        started = false;
-        i2s_stop(I2S_NUM_1);
-        entry->resetToParent(position);
-        return entry->parent();
-    }
-    return entry;
-}
-
-/*----(Tasks)----*/
-//menu task for menu setup and execution
-//TODO refactor
-void menuTask(void *params) {
-    printf("u8g2 begin: %d\n", u8g2.begin());
-    u8g2.setFont(u8g2_font_6x10_mf);   //font dimensions: 11x11
-    u8g2.clearBuffer();
-
-    int start_data = 0;
-    int settings_mod = 1;
-    int settings_mod_data = 2;
-
-    //Create menu
-    menu.begin();   //start menu
-    menu.addByName("root",            "Status",          toggle, &start_data, {"stopped", "running"});
-    menu.addByName("root",            "Wave",            picker, &target_wave_type, {"sine", "square", "triangle"});
-    menu.addByName("root",            "Skew",            counter, 0, 100, &target_skew);
-    menu.addByName("root",            "Duty cycle",      counter, 0, 100, &target_duty_cycle);
-    menu.addByName("root",            "Settings",        "Settings");
-    menu.addByName("Settings",        "Steps",           picker, &settings_mod_data, {"1", "10", "100", "1000"});
-    menu.addByName("Settings",        "Table size",      counter, 32, 65536, &target_table_size, &settings_mod);
-    menu.addByName("Settings",        "Sample rate",     counter, 44100, 96000, &target_sample_rate, &settings_mod);
-    menu.addByName("Settings",        "Frequency range", "F. range");
-    menu.addByName("Frequency range", "Minimum",          counter, 0, 22049, &target_min_freq, &settings_mod);
-    menu.addByName("Frequency range", "Maximum",          counter, 1, 22050, &target_max_freq, &settings_mod);
-    printf("Menus added\n");
-
-    int position = 0;
-    bool select = false;
-
-    bool running = false;
-
-    while(true) {
-        switch (settings_mod_data) {
-            case 0: settings_mod = 1;    break;
-            case 1: settings_mod = 10;   break;
-            case 2: settings_mod = 100;  break;
-            case 3: settings_mod = 1000; break;
-        }
-
-        if (start_data && !running) {
-            i2s_start(I2S_NUM_1);
-            running = true;
-        }
-        if (!start_data && running) {
-            i2s_stop(I2S_NUM_1);
-            running = false;
-        }
-
-        if (!digitalRead(15)) {
-        while(!digitalRead(15));
-            select = true;
-        }
-        position = encoder.getCount();
-        menu.render(&position, &select, update_menu);
-        encoder.setCount(position);
-        delay(1);
-    }
-}
-
-//TODO refactor
 void sensorTask(void *params) {
     //configure sensors
     sensor_L.setBus(&Wire1);
     sensor_R.setBus(&Wire1);
-    registerSensor(4, 18, &sensor_L);
-    registerSensor(0, 19, &sensor_R);
+    registerSensor(SENSOR_L_PIN, SENSOR_L_ADDR, &sensor_L);
+    registerSensor(SENSOR_R_PIN, SENSOR_R_ADDR, &sensor_R);
     sensor_L.setMeasurementTimingBudget(20000);
     sensor_R.setMeasurementTimingBudget(20000);
     sensor_L.startContinuous();
     sensor_R.startContinuous();
-    printf("Sensor 1 address: %d\n", sensor_L.getAddress());
-    printf("Sensor 2 address: %d\n", sensor_R.getAddress());
-    printf("%d %d\n", sensor_L.readRangeContinuousMillimeters(), sensor_R.readRangeContinuousMillimeters());
 
     int distance_L, distance_R;
     int old_distance_L = 0;
@@ -254,6 +172,90 @@ void sensorTask(void *params) {
     }
 }
 
+
+//TODO refactor and USE
+Entry *startFunction(int *position, bool *select, Entry *entry) {
+    if (!started) {
+        started = true;
+        update_menu = true;
+        i2s_start(I2S_NUM_1);
+    }
+
+    u8g2.clearBuffer();
+    u8g2.setCursor(10, 20);
+    u8g2.printf("%f", target_frequency);
+    u8g2.sendBuffer();
+    if (*select) {
+        *select = false;
+        update_menu = false;
+        started = false;
+        i2s_stop(I2S_NUM_1);
+        entry->resetToParent(position);
+        return entry->parent();
+    }
+    return entry;
+}
+
+/*----(Tasks)----*/
+//menu task for menu setup and execution
+//TODO refactor
+void menuTask(void *params) {
+    printf("u8g2 begin: %d\n", u8g2.begin());
+    u8g2.setFont(u8g2_font_6x10_mf);   //font dimensions: 11x11
+    u8g2.clearBuffer();
+
+    int start_data = 0;
+    int settings_mod = 1;
+    int settings_mod_data = 2;
+
+    //Create menu
+    menu.begin();   //start menu
+    menu.addByName("root",            "Status",          toggle, &start_data, {"stopped", "running"});
+    menu.addByName("root",            "Wave",            picker, &target_wave_type, {"sine", "square", "triangle"});
+    menu.addByName("root",            "Skew",            counter, 0, 100, &target_skew);
+    menu.addByName("root",            "Duty cycle",      counter, 0, 100, &target_duty_cycle);
+    menu.addByName("root",            "Settings",        "Settings");
+    menu.addByName("Settings",        "Steps",           picker, &settings_mod_data, {"1", "10", "100", "1000"});
+    menu.addByName("Settings",        "Table size",      counter, 32, 65536, &target_table_size, &settings_mod);
+    menu.addByName("Settings",        "Sample rate",     counter, 44100, 96000, &target_sample_rate, &settings_mod);
+    menu.addByName("Settings",        "Frequency range", "F. range");
+    menu.addByName("Frequency range", "Minimum",          counter, 0, 22049, &target_min_freq, &settings_mod);
+    menu.addByName("Frequency range", "Maximum",          counter, 1, 22050, &target_max_freq, &settings_mod);
+    printf("Menus added\n");
+
+    int position = 0;
+    bool select = false;
+
+    bool running = false;
+
+    while(true) {
+        switch (settings_mod_data) {
+            case 0: settings_mod = 1;    break;
+            case 1: settings_mod = 10;   break;
+            case 2: settings_mod = 100;  break;
+            case 3: settings_mod = 1000; break;
+        }
+
+        if (start_data && !running) {
+            i2s_start(I2S_NUM_1);
+            running = true;
+        }
+        if (!start_data && running) {
+            i2s_stop(I2S_NUM_1);
+            running = false;
+        }
+
+        if (!digitalRead(15)) {
+        while(!digitalRead(15));
+            select = true;
+        }
+        position = encoder.getCount();
+        menu.render(&position, &select, update_menu);
+        encoder.setCount(position);
+        delay(1);
+    }
+}
+
 //main task for "playing" waves
 void playTask(void *params) {
     //triangle config
@@ -325,7 +327,7 @@ void playTask(void *params) {
 
 void setup(void) {
     //i2c configuration
-    Wire.begin(SDA, SCL, 400000);   //display wire
+    Wire.begin(SDA, SCL, 100000);   //display wire
     Wire1.begin(18, 19, 400000);            //sensors wire
 
 
