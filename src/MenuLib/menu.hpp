@@ -202,6 +202,7 @@ class Menu {
          * 
          * @param position general data parameter (used for example for cursor claculations in menus)
          * @param select select value (ok, enter)
+         * @param update should the menu be updated (false)
          */
         void render(int *position, bool *select, bool update = false);
 

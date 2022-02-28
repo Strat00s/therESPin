@@ -41,7 +41,7 @@ class Entry {
         std::deque<Entry *> entries;                          //sub-entries for this entry
         int entry_cnt = 0;                                    //how many entries does this entry contain
         Entry *(*function)(int *, bool *, Entry *) = nullptr; //pointer to custom entry function
-        type_t entry_type = custom;                           //type of this entry (item, menu, custom)
+        type_t entry_type = custom;                           //type of this entry (default is custom)
         bool has_parent = false;                              //boolean for parent registering
         int scroll_offset = 0;                                //offset (in items) for "scrolling"
 

@@ -55,6 +55,7 @@ int Menu::entrySetup(Entry *entry, int parent_id, std::string parent_name) {
 }
 
 
+//Add entry
 int Menu::addByID(int parent_id, Entry *entry){
     return entrySetup(entry, parent_id);
 }
@@ -134,6 +135,7 @@ Entry *Menu::getEntryByName(std::string name) {
 
 
 void Menu::render(int *value, bool *select, bool update) {
+    //execute entry function on select, update or data change
     if ((old_value != *value) || *select || update) {
         current_entry = current_entry->execute(value, select, current_entry);
         old_value = *value;
@@ -146,10 +148,12 @@ void Menu::render(int *value, bool *select, bool update) {
             blink = !blink;
             if (blink) {
                 u8g2->setDrawColor(0);
+                //TODO replace with macro (or function) from entry.hpp
                 u8g2->drawBox(0, current_entry->position * u8g2->getMaxCharHeight() + u8g2->getMaxCharHeight() + 1, u8g2->getMaxCharWidth(), u8g2->getMaxCharHeight());
             }
             else {
                 u8g2->setDrawColor(1);
+                //TODO replace with macro (or function) from entry.hpp
                 u8g2->drawStr(0, current_entry->position * u8g2->getMaxCharHeight() + u8g2->getMaxCharHeight() * 2, ">");
             }
             u8g2->sendBuffer();
