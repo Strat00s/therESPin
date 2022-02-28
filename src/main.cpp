@@ -1,27 +1,25 @@
-#include <Arduino.h>
 #include <math.h>
-#include <ESP32Encoder.h>
-#include <driver/i2s.h>
-#include <freertos/queue.h>
+#include <iostream>
+#include <Arduino.h>
+//multitasking
 #include <freertos/task.h>
-#include <driver/dac.h>
-#include <Wire.h>
-#include <VL53L0X.h>
+#include <freertos/queue.h>
+//IO
 #include <SPI.h>
 #include <Wire.h>
-#include <iostream>
+#include <VL53L0X.h>
+#include <ESP32Encoder.h>
+//audio
+#include <driver/i2s.h>
+#include <driver/dac.h>
 //custom
 #include "MenuLib/menu.hpp"
 
 using namespace std;
 
-//TODO general refactoring
-//TODO clean it
-
+//TODO cleanup
 //TODO wait for i2s to ask for data
-//TODO make a class for i2s?
 //TODO theremin like wave
-//TODO refactor menu
 
 
 #define TABLE_SIZE 65536 //table size for calculations (wave samples) -> how many waves can be created
@@ -37,6 +35,10 @@ using namespace std;
 #define SENSOR_R_PIN 0
 #define SENSOR_L_ADDR 18
 #define SENSOR_R_ADDR 19
+
+#define DISABLE_RANGE 1000
+#define MAX_RANGE 800
+#define MIN_RANGE 60
 
 
 enum waves {
@@ -86,7 +88,7 @@ void sensorTask(void *params) {
     sensor_R.setBus(&Wire1);
     registerSensor(SENSOR_L_PIN, SENSOR_L_ADDR, &sensor_L);
     registerSensor(SENSOR_R_PIN, SENSOR_R_ADDR, &sensor_R);
-    sensor_L.setMeasurementTimingBudget(20000);
+    sensor_L.setMeasurementTimingBudget(20000); //20ms timing budger (lowest possible)
     sensor_R.setMeasurementTimingBudget(20000);
     sensor_L.startContinuous();
     sensor_R.startContinuous();
@@ -116,59 +118,26 @@ void sensorTask(void *params) {
         smoothing_array_L.push_back(distance_L);
         smoothing_array_R.push_back(distance_R);
 
-        if (distance_L < 1000) {
-            if (distance_L < 60) distance_L = 60;
-            if (distance_L > 800) distance_L = 800;
+        //Do not play anything, while at least one hand is outside of the range
+        if (distance_L > DISABLE_RANGE || distance_R > DISABLE_RANGE) {
+            target_amplitude -= 100.0;
+            if (target_amplitude < 0.0)
+                target_amplitude = 0.0;
+        }
+        else {
+            if (distance_L < MIN_RANGE) distance_L = MIN_RANGE;
+            if (distance_L > MAX_RANGE) distance_L = MAX_RANGE;
             if (old_distance_L != distance_L) {
                 old_distance_L = distance_L;
-                target_frequency = (float)(map(distance_L, 60, 800, target_min_freq * 100, target_max_freq * 100)) / 100.0;
+                target_frequency = static_cast<float>(map(distance_L, MIN_RANGE, MAX_RANGE, target_min_freq * 100, target_max_freq * 100)) / 100.0;
             }
-        }
-        if (distance_R < 1000) {
-            if (distance_R < 60) distance_R = 60;
-            if (distance_R > 800) distance_R = 800;
+            if (distance_R < MIN_RANGE) distance_R = MIN_RANGE;
+            if (distance_R > MAX_RANGE) distance_R = MAX_RANGE;
             if (old_distance_R != distance_R) {
                 old_distance_R = distance_R;
-                target_amplitude = ((float)(map(distance_R, 60, 800, 5, 20)) / 100.0) * 16384;
+                target_amplitude = static_cast<float>(map(distance_R, MIN_RANGE, MAX_RANGE, 800, 3260));
             }
         }
-
-        /*
-        distance_L = sensor_L.readRangeContinuousMillimeters();
-        smoothing_array_L.pop_front();
-        smoothing_array_L.push_back(distance_L);
-        distance_L = 0;
-        for (int i = 0; i < smoothing_array_L.size(); i++) {
-            distance_L += smoothing_array_L[i];
-        }
-        distance_L /= array_len;
-        if (distance_L < 1000) {
-            if (distance_L < 60) distance_L = 60;
-            if (distance_L > 800) distance_L = 800;
-            if (old_distance_L != distance_L) {
-                old_distance_L = distance_L;
-                target_frequency = (float)(map(distance_L, 60, 800, target_min_freq * 100, target_max_freq * 100)) / 100.0;
-            }
-        }
-
-        distance_R = sensor_R.readRangeContinuousMillimeters();
-        smoothing_array_R.pop_front();
-        smoothing_array_R.push_back(distance_R);
-        distance_R = 0;
-        for (int i = 0; i < smoothing_array_R.size(); i++) {
-            distance_R += smoothing_array_R[i];
-        }
-        distance_R /= array_len;
-        if (distance_R < 1000) {
-            if (distance_R < 60) distance_R = 60;
-            if (distance_R > 800) distance_R = 800;
-            if (old_distance_R != distance_R) {
-                old_distance_R = distance_R;
-                target_amplitude = ((float)(map(distance_R, 60, 800, 5, 20)) / 100.0) * 16384;
-            }
-        }
-        //printf("%d %d\n", distance_L, distance_R);
-        */
     }
 }
 
@@ -198,7 +167,6 @@ Entry *startFunction(int *position, bool *select, Entry *entry) {
 
 /*----(Tasks)----*/
 //menu task for menu setup and execution
-//TODO refactor
 void menuTask(void *params) {
     printf("u8g2 begin: %d\n", u8g2.begin());
     u8g2.setFont(u8g2_font_6x10_mf);   //font dimensions: 11x11
@@ -216,8 +184,8 @@ void menuTask(void *params) {
     menu.addByName("root",            "Duty cycle",      counter, 0, 100, &target_duty_cycle);
     menu.addByName("root",            "Settings",        "Settings");
     menu.addByName("Settings",        "Steps",           picker, &settings_mod_data, {"1", "10", "100", "1000"});
-    menu.addByName("Settings",        "Table size",      counter, 32, 65536, &target_table_size, &settings_mod);
-    menu.addByName("Settings",        "Sample rate",     counter, 44100, 96000, &target_sample_rate, &settings_mod);
+    menu.addByName("Settings",        "Table size X",      counter, 32, 65536, &target_table_size, &settings_mod);    //Cannot edit as of now
+    menu.addByName("Settings",        "Sample rate X",     counter, 44100, 96000, &target_sample_rate, &settings_mod);  //Cannot edit as of now
     menu.addByName("Settings",        "Frequency range", "F. range");
     menu.addByName("Frequency range", "Minimum",          counter, 0, 22049, &target_min_freq, &settings_mod);
     menu.addByName("Frequency range", "Maximum",          counter, 1, 22050, &target_max_freq, &settings_mod);
@@ -270,9 +238,9 @@ void playTask(void *params) {
     int16_t int_sample; //final sample
 
     //this is somehow required?????????????
-    printf("playTask default frequency: %f\n", frequency);
-    printf("playTask default amplitude: %f\n", AMPLITUDE);
-    //delay(100);
+    //printf("playTask default frequency: %f\n", frequency);
+    //printf("playTask default amplitude: %f\n", AMPLITUDE);
+    delay(100);
 
     //TODO replacing SAMPLE_RATE and TABLE_SIZE makes this not report to watchdog
 
@@ -350,7 +318,7 @@ void setup(void) {
     //i2s config for writing both channels of I2S
     i2s_config_t i2sConfig = {
         .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
-        .sample_rate = 44100,
+        .sample_rate = SAMPLE_RATE,
         .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
         .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
         .communication_format = I2S_COMM_FORMAT_I2S,
@@ -367,8 +335,7 @@ void setup(void) {
     setCpuFrequencyMhz(240);
 
     //create tasks
-    //xTaskCreatePinnedToCore(menuTask, "menu_task", 20000, NULL, 1, NULL, 1);    //menu task needs to be pinned to a core, to avoid garbage
-    xTaskCreatePinnedToCore(menuTask, "menu_task", 10000, NULL, 1, NULL, 1);    //menu task needs to be pinned to a core, to avoid garbage
+    xTaskCreatePinnedToCore(menuTask, "menu_task", 10000, NULL, 1, NULL, 1);    //menu task needs to be pinned to a signle core, to avoid garbage
     xTaskCreate(sensorTask, "sensor_task", 10000, NULL, 2, NULL);
     xTaskCreate(playTask, "play_task", 10000, NULL, 1, NULL);
 }
