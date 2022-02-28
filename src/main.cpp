@@ -10,7 +10,7 @@
 #include <SPI.h>
 #include <Wire.h>
 #include <iostream>
-
+//custom
 #include "MenuLib/menu.hpp"
 
 using namespace std;
@@ -42,8 +42,8 @@ enum waves {
 
 //classes
 ESP32Encoder encoder;   //encoder
-VL53L0X sensor1;
-VL53L0X sensor2;
+VL53L0X sensor_L;
+VL53L0X sensor_R;
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
 Menu menu(&u8g2);
 
@@ -98,12 +98,11 @@ Entry *startFunction(int *position, bool *select, Entry *entry) {
     return entry;
 }
 
-//TODO store data in flash???
 /*----(Tasks)----*/
 //menu task for menu setup and execution
 //TODO refactor
 void menuTask(void *params) {
-    u8g2.begin();
+    printf("u8g2 begin: %d\n", u8g2.begin());
     u8g2.setFont(u8g2_font_6x10_mf);   //font dimensions: 11x11
     u8g2.clearBuffer();
 
@@ -124,6 +123,7 @@ void menuTask(void *params) {
     menu.addByName("Settings",        "Frequency range", "F. range");
     menu.addByName("Frequency range", "Minimum",          counter, 0, 22049, &target_min_freq, &settings_mod);
     menu.addByName("Frequency range", "Maximum",          counter, 1, 22050, &target_max_freq, &settings_mod);
+    printf("Menus added\n");
 
     int position = 0;
     bool select = false;
@@ -161,63 +161,96 @@ void menuTask(void *params) {
 //TODO refactor
 void sensorTask(void *params) {
     //configure sensors
-    sensor1.setBus(&Wire1);
-    sensor2.setBus(&Wire1);
-    registerSensor(4, 18, &sensor1);
-    registerSensor(0, 19, &sensor2);
-    //sensor->setMeasurementTimingBudget(20000);
-    //sensor->setMeasurementTimingBudget(20000);
-    sensor1.startContinuous();
-    sensor2.startContinuous();
-    printf("Sensor 1 address: %d\n", sensor1.getAddress());
-    printf("Sensor 2 address: %d\n", sensor2.getAddress());
-    printf("%d %d\n", sensor1.readRangeContinuousMillimeters(), sensor2.readRangeContinuousMillimeters());
+    sensor_L.setBus(&Wire1);
+    sensor_R.setBus(&Wire1);
+    registerSensor(4, 18, &sensor_L);
+    registerSensor(0, 19, &sensor_R);
+    sensor_L.setMeasurementTimingBudget(20000);
+    sensor_R.setMeasurementTimingBudget(20000);
+    sensor_L.startContinuous();
+    sensor_R.startContinuous();
+    printf("Sensor 1 address: %d\n", sensor_L.getAddress());
+    printf("Sensor 2 address: %d\n", sensor_R.getAddress());
+    printf("%d %d\n", sensor_L.readRangeContinuousMillimeters(), sensor_R.readRangeContinuousMillimeters());
 
-    int len1, len2;
-    int old_len1 = 0;
-    int old_len2 = 0;
+    int distance_L, distance_R;
+    int old_distance_L = 0;
+    int old_distance_R = 0;
 
     //smoothing vectors
-    //TODO add changable smoothing size???
-    //TODO fix
-    int array_len = 5;
-    deque<int> sens1_array = {0, 0, 0, 0, 0};
-    deque<int> sens2_array = {0, 0, 0, 0, 0};
+    int array_len = 3;
+    deque<int> smoothing_array_L = {0, 0, 0};
+    deque<int> smoothing_array_R = {0, 0, 0};
 
     while(true) {
-        len1 = sensor1.readRangeContinuousMillimeters();
-        sens1_array.pop_front();
-        sens1_array.push_back(len1);
-        len1 = 0;
-        for (int i = 0; i < sens1_array.size(); i++) {
-            len1 += sens1_array[i];
+        distance_L = sensor_L.readRangeContinuousMillimeters();
+        distance_R = sensor_R.readRangeContinuousMillimeters();
+
+        smoothing_array_L.pop_front();
+        smoothing_array_R.pop_front();
+        for (int i = 0; i < array_len - 1; i++) {
+            distance_L += smoothing_array_L[i];
+            distance_R += smoothing_array_R[i];
         }
-        len1 /= array_len;
-        if (len1 < 1000) {
-            if (len1 < 60) len1 = 60;
-            if (len1 > 800) len1 = 800;
-            if (old_len1 != len1) {
-                old_len1 = len1;
-                target_frequency = (float)(map(len1, 60, 800, target_min_freq * 100, target_max_freq * 100)) / 100.0;
+        distance_L /= array_len;
+        distance_R /= array_len;
+
+        smoothing_array_L.push_back(distance_L);
+        smoothing_array_R.push_back(distance_R);
+
+        if (distance_L < 1000) {
+            if (distance_L < 60) distance_L = 60;
+            if (distance_L > 800) distance_L = 800;
+            if (old_distance_L != distance_L) {
+                old_distance_L = distance_L;
+                target_frequency = (float)(map(distance_L, 60, 800, target_min_freq * 100, target_max_freq * 100)) / 100.0;
+            }
+        }
+        if (distance_R < 1000) {
+            if (distance_R < 60) distance_R = 60;
+            if (distance_R > 800) distance_R = 800;
+            if (old_distance_R != distance_R) {
+                old_distance_R = distance_R;
+                target_amplitude = ((float)(map(distance_R, 60, 800, 5, 20)) / 100.0) * 16384;
             }
         }
 
-        len2 = sensor2.readRangeContinuousMillimeters();
-        sens2_array.pop_front();
-        sens2_array.push_back(len2);
-        len2 = 0;
-        for (int i = 0; i < sens2_array.size(); i++) {
-            len2 += sens2_array[i];
+        /*
+        distance_L = sensor_L.readRangeContinuousMillimeters();
+        smoothing_array_L.pop_front();
+        smoothing_array_L.push_back(distance_L);
+        distance_L = 0;
+        for (int i = 0; i < smoothing_array_L.size(); i++) {
+            distance_L += smoothing_array_L[i];
         }
-        len2 /= array_len;
-        if (len2 < 1000) {
-            if (len2 < 60) len2 = 60;
-            if (len2 > 800) len2 = 800;
-            if (old_len2 != len2) {
-                old_len2 = len2;
-                target_amplitude = ((float)(map(len2, 60, 800, 5, 20)) / 100.0) * 16384;
+        distance_L /= array_len;
+        if (distance_L < 1000) {
+            if (distance_L < 60) distance_L = 60;
+            if (distance_L > 800) distance_L = 800;
+            if (old_distance_L != distance_L) {
+                old_distance_L = distance_L;
+                target_frequency = (float)(map(distance_L, 60, 800, target_min_freq * 100, target_max_freq * 100)) / 100.0;
             }
         }
+
+        distance_R = sensor_R.readRangeContinuousMillimeters();
+        smoothing_array_R.pop_front();
+        smoothing_array_R.push_back(distance_R);
+        distance_R = 0;
+        for (int i = 0; i < smoothing_array_R.size(); i++) {
+            distance_R += smoothing_array_R[i];
+        }
+        distance_R /= array_len;
+        if (distance_R < 1000) {
+            if (distance_R < 60) distance_R = 60;
+            if (distance_R > 800) distance_R = 800;
+            if (old_distance_R != distance_R) {
+                old_distance_R = distance_R;
+                target_amplitude = ((float)(map(distance_R, 60, 800, 5, 20)) / 100.0) * 16384;
+            }
+        }
+        //printf("%d %d\n", distance_L, distance_R);
+        */
     }
 }
 
@@ -235,9 +268,9 @@ void playTask(void *params) {
     int16_t int_sample; //final sample
 
     //this is somehow required?????????????
-    //printf("playTask default frequency: %f\n", frequency);
-    //printf("playTask default amplitude: %f\n", AMPLITUDE);
-    delay(100);
+    printf("playTask default frequency: %f\n", frequency);
+    printf("playTask default amplitude: %f\n", AMPLITUDE);
+    //delay(100);
 
     //TODO replacing SAMPLE_RATE and TABLE_SIZE makes this not report to watchdog
 
@@ -292,8 +325,8 @@ void playTask(void *params) {
 
 void setup(void) {
     //i2c configuration
-    Wire.begin(SDA, SCL, 100000);   //display wire
-    Wire1.begin(18, 19);            //sensors wire
+    Wire.begin(SDA, SCL, 400000);   //display wire
+    Wire1.begin(18, 19, 400000);            //sensors wire
 
 
     //encoder configuration (used only inside menu)
@@ -309,7 +342,8 @@ void setup(void) {
         .bck_io_num = 16,
         .ws_io_num = 17,
         .data_out_num = 25,
-        .data_in_num = -1};
+        .data_in_num = -1
+    };
     
     //i2s config for writing both channels of I2S
     i2s_config_t i2sConfig = {
@@ -321,18 +355,20 @@ void setup(void) {
         .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
         .dma_buf_count = 4,
         .dma_buf_len = 64,
-        .use_apll = true};
+        .use_apll = true
+    };
 
     i2s_driver_install(I2S_NUM_1, &i2sConfig, 0, NULL); //install and start i2s driver
     i2s_stop(I2S_NUM_1);                                //instantly stop the driver
     i2s_set_pin(I2S_NUM_1, &i2sPins);                   //set up the i2s pins
     i2s_zero_dma_buffer(I2S_NUM_1);                     //clear the DMA buffers
-
+    setCpuFrequencyMhz(240);
 
     //create tasks
-    xTaskCreatePinnedToCore(menuTask, "menu_task", 200000, NULL, 1, &menu_handle, 1);    //menu task needs to be pinned to a core, to avoid garbage
-    xTaskCreate(sensorTask, "sensor_task", 100000, NULL, 1, &sensor_handle);
-    xTaskCreate(playTask, "play_task", 100000, NULL, 1, &play_handle);
+    //xTaskCreatePinnedToCore(menuTask, "menu_task", 20000, NULL, 1, NULL, 1);    //menu task needs to be pinned to a core, to avoid garbage
+    xTaskCreatePinnedToCore(menuTask, "menu_task", 10000, NULL, 1, NULL, 1);    //menu task needs to be pinned to a core, to avoid garbage
+    xTaskCreate(sensorTask, "sensor_task", 10000, NULL, 2, NULL);
+    xTaskCreate(playTask, "play_task", 10000, NULL, 1, NULL);
 }
 
 
