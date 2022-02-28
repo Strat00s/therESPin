@@ -1,67 +1,68 @@
 #include <iostream>
 #include "entry.hpp"
 
-
+//Constructors
 Entry::Entry(U8G2 *u8g2, std::string name, std::string header, Entry *(*function)(int *, bool *, Entry *)) {
-    this->u8g2 = u8g2;
-    this->name = name;
-    this->header = header;
-    entry_type = not_item;
+    this->u8g2     = u8g2;
+    this->name     = name;
+    this->header   = header;
+    entry_type     = not_item;
     this->function = function;
 }
 
 Entry::Entry(U8G2 *u8g2, std::string name, type_t item_type, int min, int max, int *start, int *modifier) {
     this->u8g2 = u8g2;
     this->name = name;
-    item.min = min;
-    item.max = max;
+    item.min   = min;
+    item.max   = max;
     if (*start > item.max)
         *start = item.max;
     if (*start < item.min)
         *start = item.min;
-    item.type = item_type;
-    item.value = start;
+    item.type     = item_type;
+    item.value    = start;
     item.modifier = modifier;
-    entry_type = item_type;
+    entry_type    = item_type;
 }
 
 Entry::Entry(U8G2 *u8g2, std::string name, type_t item_type, int *start, std::vector<std::string> options) {
     this->u8g2 = u8g2;
     this->name = name;
-    item.min = 0;
-    item.max = options.size() - 1;
+    item.min   = 0;
+    item.max   = options.size() - 1;
     if (*start > item.max)
         *start = item.max;
     if (*start < item.min)
         *start = item.min;
-    item.options = options;
-    item.type = item_type;
-    item.value = start;
+    item.options  = options;
+    item.type     = item_type;
+    item.value    = start;
     item.modifier = nullptr;
-    entry_type = item_type;
+    entry_type    = item_type;
 }
 
 Entry::Entry(U8G2 *u8g2, std::string name, int min, int max, int *data, int *modifier, std::vector<std::string> options, Entry *(*function)(int *, bool *, Entry *)) {
-    this->u8g2 = u8g2;
-    this->name = name;
-    item.type = custom;
-    item.value = data;
-    item.modifier = modifier;
-    item.min = min;
-    item.max = max;
-    item.options = options;
-    entry_type = custom;
+    this->u8g2     = u8g2;
+    this->name     = name;
+    item.type      = custom;
+    item.value     = data;
+    item.modifier  = modifier;
+    item.min       = min;
+    item.max       = max;
+    item.options   = options;
+    entry_type     = custom;
     this->function = function;
 }
 
 Entry::~Entry() {}
 
 
+//Add entry
 void Entry::addEntry(std::string name, type_t item_type, int min, int max, int *start) {
-    Entry *tmp = new Entry(u8g2, name, item_type, min, max, start);
-    tmp->addParent(this);
-    entries.push_back(tmp);
-    entry_cnt++;
+    Entry *tmp = new Entry(u8g2, name, item_type, min, max, start); //create new entry
+    tmp->addParent(this);                                           //add parent
+    entries.push_back(tmp);                                         //save it to a stack
+    entry_cnt++;                                                    //increase entry counter
 }
 
 void Entry::addEntry(std::string name, type_t item_type, int *start, std::vector<std::string> options) {
@@ -93,6 +94,7 @@ void Entry::addParent(Entry *parent) {
 }
 
 
+//Draw functions
 void Entry::drawCenteredString(std::string text, int y) {
     int width = FONT_WIDTH * text.size();
     width = LCD_WIDTH/2 - width/2;
@@ -102,15 +104,14 @@ void Entry::drawCenteredString(std::string text, int y) {
 void Entry::drawItemData(item_t item, int y) {
     std::string tmp;
     switch (item.type) {
-        case counter: tmp = std::to_string(*item.value); break;
         case picker:
-        case toggle: tmp = item.options[*item.value]; break;
+        case toggle:  tmp = item.options[*item.value]; break;
+        case counter: tmp = std::to_string(*item.value); break;
         default: break;
     }
     u8g2->setCursor((CHARS_IN_ROW - tmp.length()) * FONT_WIDTH, y);
     u8g2->printf("%s", tmp.c_str());
 }
-
 
 Entry *Entry::drawMenu(int *position, bool *select) {
     u8g2->clearBuffer();
@@ -184,17 +185,18 @@ Entry *Entry::drawMenu(int *position, bool *select) {
 }
 
 Entry *Entry::drawItem(int *position, bool *select) {
-    int x = FONT_WIDTH * 2 + name.length() * FONT_WIDTH;                   //skip '> '
-    int y = LINE(this->position + 1); //start right under the above text
+    //clear current line for redraw
+    int x = FONT_WIDTH * 2 + name.length() * FONT_WIDTH; //skip '> '
+    int y = LINE(this->position + 1);                    //start right under the above text
     int w = LCD_WIDTH - x;
     int h = FONT_HEIGHT + 1;
-
-    int line = LINE(this->position +2);
 
     u8g2->setDrawColor(0);
     u8g2->drawBox(x, y, w , h);
     u8g2->setDrawColor(1);
 
+    //write to now cleared line
+    int line = LINE(this->position +2);
     u8g2->setCursor(x, line);
 
     //toggle logic
@@ -234,6 +236,7 @@ Entry *Entry::drawItem(int *position, bool *select) {
 }
 
 
+//Miscellaneous
 Entry *Entry::parent() {
     if (has_parent)
         return this->entries[0];

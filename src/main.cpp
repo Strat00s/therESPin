@@ -20,6 +20,8 @@ using namespace std;
 
 //TODO wait for i2s to ask for data
 //TODO make a class for i2s?
+//TODO theremin like wave
+//TODO refactor menu
 
 
 #define TABLE_SIZE 65536 //table size for calculations (wave samples) -> how many waves can be created
@@ -109,18 +111,19 @@ void menuTask(void *params) {
     int settings_mod = 1;
     int settings_mod_data = 2;
 
+    //Create menu
     menu.begin();   //start menu
-    menu.addByName("root", "Status", toggle, &start_data, {"stopped", "running"});
-    menu.addByName("root", "Wave", picker, &target_wave_type, {"sine", "square", "triangle"});
-    menu.addByName("root", "Skew", counter, 0, 100, &target_skew);
-    menu.addByName("root", "Duty cycle", counter, 0, 100, &target_duty_cycle);
-    menu.addByName("root", "Settings", "Settings");
-    menu.addByName("Settings", "Steps", picker, &settings_mod_data, {"1", "10", "100", "1000"});
-    menu.addByName("Settings", "Table size", counter, 32, 65536, &target_table_size, &settings_mod);
-    menu.addByName("Settings", "Sample rate", counter, 44100, 96000, &target_sample_rate, &settings_mod);
-    menu.addByName("Settings", "Frequency range", "F. range");
-    menu.addByName("Frequency range", "Minimum", counter, 0, 22049, &target_min_freq, &settings_mod);
-    menu.addByName("Frequency range", "Maximum", counter, 1, 22050, &target_max_freq, &settings_mod);
+    menu.addByName("root",            "Status",          toggle, &start_data, {"stopped", "running"});
+    menu.addByName("root",            "Wave",            picker, &target_wave_type, {"sine", "square", "triangle"});
+    menu.addByName("root",            "Skew",            counter, 0, 100, &target_skew);
+    menu.addByName("root",            "Duty cycle",      counter, 0, 100, &target_duty_cycle);
+    menu.addByName("root",            "Settings",        "Settings");
+    menu.addByName("Settings",        "Steps",           picker, &settings_mod_data, {"1", "10", "100", "1000"});
+    menu.addByName("Settings",        "Table size",      counter, 32, 65536, &target_table_size, &settings_mod);
+    menu.addByName("Settings",        "Sample rate",     counter, 44100, 96000, &target_sample_rate, &settings_mod);
+    menu.addByName("Settings",        "Frequency range", "F. range");
+    menu.addByName("Frequency range", "Minimum",          counter, 0, 22049, &target_min_freq, &settings_mod);
+    menu.addByName("Frequency range", "Maximum",          counter, 1, 22050, &target_max_freq, &settings_mod);
 
     int position = 0;
     bool select = false;
@@ -144,8 +147,8 @@ void menuTask(void *params) {
             running = false;
         }
 
-        if (!digitalRead(23)) {
-        while(!digitalRead(23));
+        if (!digitalRead(15)) {
+        while(!digitalRead(15));
             select = true;
         }
         position = encoder.getCount();
@@ -166,6 +169,9 @@ void sensorTask(void *params) {
     //sensor->setMeasurementTimingBudget(20000);
     sensor1.startContinuous();
     sensor2.startContinuous();
+    printf("Sensor 1 address: %d\n", sensor1.getAddress());
+    printf("Sensor 2 address: %d\n", sensor2.getAddress());
+    printf("%d %d\n", sensor1.readRangeContinuousMillimeters(), sensor2.readRangeContinuousMillimeters());
 
     int len1, len2;
     int old_len1 = 0;
@@ -173,8 +179,10 @@ void sensorTask(void *params) {
 
     //smoothing vectors
     //TODO add changable smoothing size???
-    deque<int> sens1_array = {0, 0, 0};
-    deque<int> sens2_array = {0, 0, 0};
+    //TODO fix
+    int array_len = 5;
+    deque<int> sens1_array = {0, 0, 0, 0, 0};
+    deque<int> sens2_array = {0, 0, 0, 0, 0};
 
     while(true) {
         len1 = sensor1.readRangeContinuousMillimeters();
@@ -184,7 +192,7 @@ void sensorTask(void *params) {
         for (int i = 0; i < sens1_array.size(); i++) {
             len1 += sens1_array[i];
         }
-        len1 /= 3;
+        len1 /= array_len;
         if (len1 < 1000) {
             if (len1 < 60) len1 = 60;
             if (len1 > 800) len1 = 800;
@@ -201,7 +209,7 @@ void sensorTask(void *params) {
         for (int i = 0; i < sens2_array.size(); i++) {
             len2 += sens2_array[i];
         }
-        len2 /= 3;
+        len2 /= array_len;
         if (len2 < 1000) {
             if (len2 < 60) len2 = 60;
             if (len2 > 800) len2 = 800;
@@ -236,7 +244,7 @@ void playTask(void *params) {
     while (true) {
         //smooth frequency "stitching"
         frequency += 0.01 * (target_frequency - frequency); //"slowly" aproach our desired frequency
-        delta = (frequency * TABLE_SIZE) / SAMPLE_RATE;     //calculate delta - change in our non-existatn lookup table
+        delta = (frequency * TABLE_SIZE) / SAMPLE_RATE;     //calculate delta - change in our non-existant lookup table
         pos += delta;                                       //move to next position
 
         //generate apropriate wave type
@@ -292,7 +300,7 @@ void setup(void) {
     encoder.attachSingleEdge(36, 39);
     encoder.setFilter(1023);
     encoder.clearCount();
-    pinMode(23, INPUT_PULLUP);
+    pinMode(15, INPUT_PULLUP);
 
 
     //i2s configuration
@@ -322,12 +330,11 @@ void setup(void) {
 
 
     //create tasks
-    xTaskCreatePinnedToCore(menuTask, "menu_task", 20000, NULL, 1, &menu_handle, 1);    //menu task needs to be pinned to a core, to avoid garbage
-    xTaskCreate(sensorTask, "sensor_task", 10000, NULL, 1, &sensor_handle);
-    xTaskCreate(playTask, "play_task", 10000, NULL, 1, &play_handle);
+    xTaskCreatePinnedToCore(menuTask, "menu_task", 200000, NULL, 1, &menu_handle, 1);    //menu task needs to be pinned to a core, to avoid garbage
+    xTaskCreate(sensorTask, "sensor_task", 100000, NULL, 1, &sensor_handle);
+    xTaskCreate(playTask, "play_task", 100000, NULL, 1, &play_handle);
 }
 
 
 void loop(void) {
-    //nothing here as everything has it's own task
 }

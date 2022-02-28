@@ -56,7 +56,7 @@ class Entry {
 
         /** @brief Draw item data at the right side of screen
          * 
-         * @param entry entry pointer
+         * @param item item type
          * @param y screen coordinate
          */
         void drawItemData(item_t item, int y);
@@ -93,9 +93,9 @@ class Entry {
          * @param u8g2 pointer to u8g2 object
          * @param name entry name
          * @param header menu header
-         * @param function custom function pointer
+         * @param function custom function pointer (nullptr)
          */
-        Entry(U8G2 *u8g2, std::string name, std::string header, Entry *(*function)(int *, bool *, Entry *) = nullptr);          //menu
+        Entry(U8G2 *u8g2, std::string name, std::string header, Entry *(*function)(int *, bool *, Entry *) = nullptr); //menu
 
         /** @brief Construct a new counter item Entry object
          * 
@@ -105,8 +105,9 @@ class Entry {
          * @param min min item value
          * @param max max item value
          * @param start start index pointer
+         * @param modifier modifier pointer value (item value change step) (nullptr)
          */
-        Entry(U8G2 *u8g2, std::string name, type_t item_type, int min, int max, int *start, int *modifier = nullptr);                                    //counter item
+        Entry(U8G2 *u8g2, std::string name, type_t item_type, int min, int max, int *start, int *modifier = nullptr);  //counter item
 
         /** @brief Construct a new picker/toggle item Entry object
          * 
@@ -116,17 +117,18 @@ class Entry {
          * @param start start index pointer
          * @param options vector of strings containing options
          */
-        Entry(U8G2 *u8g2, std::string name, type_t item_type, int *start, std::vector<std::string> options);                    //picker and toggle item
+        Entry(U8G2 *u8g2, std::string name, type_t item_type, int *start, std::vector<std::string> options);           //picker and toggle item
 
         /** @brief Construct a new custom item Entry object
          * 
          * @param u8g2 pointer to u8g2 object
          * @param name entry name
-         * @param min min item value
-         * @param max max item value
-         * @param data data pointer
-         * @param options vector of strings containing options
-         * @param function custom function pointer
+         * @param min min item value (0)
+         * @param max max item value (0)
+         * @param data data pointer (nullptr)
+         * @param modifier modifier pointer value (item value change step) (nullptr)
+         * @param options vector of strings containing options ({})
+         * @param function custom function pointer (nullptr)
          */
         Entry(U8G2 *u8g2, std::string name, int min = 0, int max = 0, int *data = nullptr, int *modifier = nullptr, std::vector<std::string> options = {}, Entry *(*function)(int *, bool *, Entry *) = nullptr); //custom item
 
@@ -150,7 +152,7 @@ class Entry {
          * @param max max item value
          * @param start start index pinter
          */
-        void addEntry(std::string name, type_t item_type, int min, int max, int *start); //add counter entry
+        void addEntry(std::string name, type_t item_type, int min, int max, int *start);                 //add counter entry
 
         /** @brief Create and add picker/toggle item entry
          * 
@@ -166,7 +168,7 @@ class Entry {
          * @param name entry name
          * @param header menu header
          */
-        void addEntry(std::string name, std::string header); //add name entry
+        void addEntry(std::string name, std::string header);                                             //add name entry
 
         /** @brief Add already created entry to current entry
          * 
@@ -177,7 +179,7 @@ class Entry {
 
         /** @brief Add parent to current entry
          * 
-         * @param parent parent pointer
+         * @param parent parent entry pointer
          */
         void addParent(Entry *parent);
 

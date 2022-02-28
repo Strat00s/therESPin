@@ -15,6 +15,8 @@ class Menu {
          * 
          * @param entry entry to setup
          * @param parent_id parent id
+         * @param parent_name parent name to which we want add new entry (default empty string)
+         * @return returns entry ID or -1 if parent wasn't found
          */
         int entrySetup(Entry *entry, int parent_id, std::string parent_name = "");
 
@@ -57,17 +59,17 @@ class Menu {
         //add entries to parents by id
         /** @brief Add copy of and already created entry
          * 
-         * @param entry entry to be added
          * @param parent_id parent id
+         * @param entry entry to be added
          * @return Entry id on succes, -1 on failure
          */
         int addByID(int parent_id, Entry *entry);
         
         /** @brief Create and add menu entry
          * 
+         * @param parent_id parent id
          * @param name entry name
          * @param header header string
-         * @param parent_id parent id
          * @param function custom function
          * @return Entry id on succes, -1 on failure 
          */
@@ -75,33 +77,37 @@ class Menu {
         
         /** @brief Create and add counter item entry
          * 
+         * @param parent_id parent id
          * @param name entry name
          * @param item_type item type
          * @param min min item value
          * @param max max item value
          * @param start start index
-         * @param parent_id parent id
+         * @param modifier by how much should item value change
          * @return Entry id on succes, -1 on failure 
          */
         int addByID(int parent_id, std::string name, type_t item_type, int min, int max, int *start, int *modifier = nullptr);
         
         /** @brief Create and add picker/toggle item entry
          * 
+         * @param parent_id parent id
          * @param name entry name
          * @param item_type item type
          * @param start start index
          * @param options vector of strings containing options
-         * @param parent_id parent id
          * @return Entry id on succes, -1 on failure 
          */
         int addByID(int parent_id, std::string name, type_t item_type, int *start, std::vector<std::string> options);
         
         /** @brief Create and add custom item entry
          * 
-         * @param name entry name
-         * @param item_type item type
-         * @param data data pointer
          * @param parent_id parent id
+         * @param name entry name
+         * @param min min item value (default 0)
+         * @param max max item value ((default 0)
+         * @param data data pointer (default nullptr)
+         * @param modifier by how much should item value change (default null; if null, 1 will be used)
+         * @param options vector of strings containing options
          * @param function custom function
          * @return Entry id on succes, -1 on failure 
          */
@@ -133,7 +139,8 @@ class Menu {
          * @param item_type item type
          * @param min min item value
          * @param max max item value
-         * @param start start index pointer
+         * @param start start index
+         * @param modifier by how much should item value change
          * @return Entry id on succes, -1 on failure
          */
         int addByName(std::string parent_name, std::string name, type_t item_type, int min, int max, int *start, int *modifier = nullptr);
@@ -153,25 +160,24 @@ class Menu {
          * 
          * @param parent_name parent name
          * @param name entry name
-         * @param min min item value
-         * @param max max item value
-         * @param data data pointer
+         * @param min min item value (default 0)
+         * @param max max item value (default 0)
+         * @param data data pointer (default nullptr)
+         * @param modifier by how much should item value change (default null; if null, 1 will be used)
          * @param options vector of strings containing options
-         * @param function custom function pointer
+         * @param function custom function
          * @return Entry id on succes, -1 on failure 
          */
         int addByName(std::string parent_name, std::string name, int min = 0, int max = 0, int *data = nullptr, int *modifier = nullptr, std::vector<std::string> options = {}, Entry *(*function)(int *, bool *, Entry *) = nullptr); //create custom item
 
         
-        /**
-         * @brief Get the current Entry (selected menu/item) id
+        /** @brief Get the current Entry (selected menu/item) id
          * 
-         * @return entry id (int)
+         * @return entry id
          */
         int getCurrentId();
 
-        /**
-         * @brief Get the current Entry (selected menu/item)
+        /** @brief Get the current Entry (selected menu/item)
          * 
          * @return Enttry pointer
          */
