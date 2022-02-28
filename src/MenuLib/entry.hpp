@@ -4,16 +4,6 @@
 #include <deque>
 #include <vector>
 
-//TODO move macros???
-//TODO add update option
-#define FONT_WIDTH  this->u8g2->getMaxCharWidth()
-#define FONT_HEIGHT this->u8g2->getMaxCharHeight()
-#define LCD_WIDTH   this->u8g2->getDisplayWidth()
-#define LCD_HEIGHT  this->u8g2->getDisplayHeight()
-#define CHARS_IN_ROW LCD_WIDTH / FONT_WIDTH
-#define CHARS_IN_COL LCD_HEIGHT / FONT_HEIGHT
-#define LINE(x) ((x) * FONT_HEIGHT)
-
 typedef enum {
     not_item,
     counter,
@@ -196,6 +186,26 @@ class Entry {
 
         /** @brief Return entry type */
         type_t type();
+
+
+        /** @brief Get number of characters in a row
+         * 
+         * @return number of characters in row
+         */
+        int charsInRow(U8G2 *u8g2 = nullptr);
+        
+        /** @brief Get number of characters in a column
+         * 
+         * @return number of characters in column
+         */
+        int charsInCol(U8G2 *u8g2 = nullptr);
+
+        /** @brief Get screen line number (y coordinate) for set row
+         * 
+         * @param row row which line we want
+         * @return line number (y coordinate)
+         */
+        int getLine(int row, U8G2 *u8g2 = nullptr);
 
 
         /** @brief Execute the entry function

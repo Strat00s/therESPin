@@ -148,12 +148,10 @@ void Menu::render(int *value, bool *select, bool update) {
             blink = !blink;
             if (blink) {
                 u8g2->setDrawColor(0);
-                //TODO replace with macro (or function) from entry.hpp
                 u8g2->drawBox(0, current_entry->position * u8g2->getMaxCharHeight() + u8g2->getMaxCharHeight() + 1, u8g2->getMaxCharWidth(), u8g2->getMaxCharHeight());
             }
             else {
                 u8g2->setDrawColor(1);
-                //TODO replace with macro (or function) from entry.hpp
                 u8g2->drawStr(0, current_entry->position * u8g2->getMaxCharHeight() + u8g2->getMaxCharHeight() * 2, ">");
             }
             u8g2->sendBuffer();

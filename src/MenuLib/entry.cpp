@@ -96,8 +96,8 @@ void Entry::addParent(Entry *parent) {
 
 //Draw functions
 void Entry::drawCenteredString(std::string text, int y) {
-    int width = FONT_WIDTH * text.size();
-    width = LCD_WIDTH/2 - width/2;
+    int width = u8g2->getMaxCharWidth() * text.size();
+    width = u8g2->getDisplayWidth()/2 - width/2;
     u8g2->drawStr(width, y, text.c_str());
 }
 
@@ -109,7 +109,7 @@ void Entry::drawItemData(item_t item, int y) {
         case counter: tmp = std::to_string(*item.value); break;
         default: break;
     }
-    u8g2->setCursor((CHARS_IN_ROW - tmp.length()) * FONT_WIDTH, y);
+    u8g2->setCursor((charsInRow() - tmp.length()) * this->u8g2->getMaxCharWidth(), y);
     u8g2->printf("%s", tmp.c_str());
 }
 
@@ -119,7 +119,7 @@ Entry *Entry::drawMenu(int *position, bool *select) {
     
     //draw header when needed
     if (header != "") {
-        drawCenteredString(header, LINE(1));
+        drawCenteredString(header, getLine(1));
         header_offset = 1;
     }
 
@@ -129,14 +129,14 @@ Entry *Entry::drawMenu(int *position, bool *select) {
         *position = 0;
 
     //when at the end of the screen, scroll items
-    if (*position - scroll_offset > CHARS_IN_COL - 1 - header_offset)   //CHARS_IN_COL starts at 1, *position on 0 -> -1
+    if (*position - scroll_offset > charsInCol() - 1 - header_offset)   //charsInCol() starts at 1, *position on 0 -> -1
         scroll_offset++;
     if (*position - scroll_offset < 0)
         scroll_offset--;
 
     //draw all entries
     for (int i = scroll_offset; i < entry_cnt; i++) {
-        u8g2->setCursor(0, LINE(i - scroll_offset + 1 + header_offset));    //"zero" i; i starts at 0, lines start at 1 -> +1; add header offset
+        u8g2->setCursor(0, getLine(i - scroll_offset + 1 + header_offset));    //"zero" i; i starts at 0, lines start at 1 -> +1; add header offset
 
         //print pointer
         if (i == *position) {
@@ -153,16 +153,16 @@ Entry *Entry::drawMenu(int *position, bool *select) {
         
         //print item data
         if (entries[i]->type() != not_item)
-            drawItemData(entries[i]->item, LINE(i - scroll_offset + 1 + header_offset));
+            drawItemData(entries[i]->item, getLine(i - scroll_offset + 1 + header_offset));
 
         //exit when there are more entries than available screen space
-        if (i - scroll_offset == CHARS_IN_COL - 1 - header_offset)
+        if (i - scroll_offset == charsInCol() - 1 - header_offset)
             break;
     }
 
     //draw entry count
     std::string tmp = "["+ std::to_string(*position + 1) + "/" + std::to_string(entry_cnt) + "]";
-    u8g2->setCursor((CHARS_IN_ROW - tmp.length()) * FONT_WIDTH, LINE(1));
+    u8g2->setCursor((charsInRow() - tmp.length()) * u8g2->getMaxCharWidth(), getLine(1));
     u8g2->printf("%s", tmp.c_str());
 
     u8g2->sendBuffer(); //send buffer to draw the screen
@@ -186,17 +186,17 @@ Entry *Entry::drawMenu(int *position, bool *select) {
 
 Entry *Entry::drawItem(int *position, bool *select) {
     //clear current line for redraw
-    int x = FONT_WIDTH * 2 + name.length() * FONT_WIDTH; //skip '> '
-    int y = LINE(this->position + 1);                    //start right under the above text
-    int w = LCD_WIDTH - x;
-    int h = FONT_HEIGHT + 1;
+    int x = u8g2->getMaxCharWidth() * 2 + name.length() * u8g2->getMaxCharWidth(); //skip '> '
+    int y = getLine(this->position + 1);                    //start right under the above text
+    int w = u8g2->getDisplayWidth() - x;
+    int h = u8g2->getMaxCharHeight() + 1;
 
     u8g2->setDrawColor(0);
     u8g2->drawBox(x, y, w , h);
     u8g2->setDrawColor(1);
 
     //write to now cleared line
-    int line = LINE(this->position +2);
+    int line = getLine(this->position +2);
     u8g2->setCursor(x, line);
 
     //toggle logic
@@ -256,6 +256,25 @@ void Entry::setFunction(Entry *(*function)(int *, bool *, Entry *)) {
 }
 
 
+//Helper functions
+int Entry::charsInRow(U8G2 *u8g2) {
+    if (u8g2 == nullptr)
+        u8g2 = this->u8g2;
+    return u8g2->getDisplayWidth() / u8g2->getMaxCharWidth();
+}
+int Entry::charsInCol(U8G2 *u8g2) {
+    if (u8g2 == nullptr)
+        u8g2 = this->u8g2;
+    return u8g2->getDisplayHeight() / u8g2->getMaxCharHeight();
+}
+int Entry::getLine(int row, U8G2 *u8g2) {
+    if (u8g2 == nullptr)
+        u8g2 = this->u8g2;
+    return row * u8g2->getMaxCharHeight();
+}
+
+
+//Main
 Entry *Entry::execute(int *position, bool *select, Entry *entry) {
     //menu
     if (this->function == nullptr) {
