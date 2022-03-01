@@ -17,13 +17,8 @@
 
 using namespace std;
 
-//TODO cleanup
-//TODO wait for i2s to ask for data
-//TODO theremin like wave
-
-
 #define TABLE_SIZE 65536 //table size for calculations (wave samples) -> how many waves can be created
-#define AMPLITUDE 0.1 * 16384   //TODO proper amplitude
+#define AMPLITUDE 512
 #define MAX_SKEW 100   //max skew for triangle wave
 
 #define SAMPLE_RATE 44100 //audio sample rate
@@ -44,7 +39,8 @@ using namespace std;
 enum waves {
     sine,
     square,
-    triangle
+    triangle,
+    custom_wave
 };
 
 //classes
@@ -62,7 +58,7 @@ TaskHandle_t play_handle;
 //global variables for data exchange
 float target_frequency = MIN_FREQ;
 float target_amplitude = AMPLITUDE;
-int target_wave_type = 0;
+int target_wave_type = 3;
 int target_skew = 50;
 int target_duty_cycle = 50;
 int target_min_freq = MIN_FREQ;
@@ -73,6 +69,10 @@ bool update_menu = false;
 bool started = false;
 
 
+int global_range = 0;
+
+
+/*----(IO)----*/
 //sensor configuration rutine
 void registerSensor(int enable_pin, uint8_t address, VL53L0X *sensor) {
     pinMode(enable_pin, OUTPUT);
@@ -82,6 +82,7 @@ void registerSensor(int enable_pin, uint8_t address, VL53L0X *sensor) {
     pinMode(enable_pin, INPUT);
 }
 
+//sensor task for reading, averaging and writing data do queues
 void sensorTask(void *params) {
     //configure sensors
     sensor_L.setBus(&Wire1);
@@ -106,6 +107,7 @@ void sensorTask(void *params) {
         distance_L = sensor_L.readRangeContinuousMillimeters();
         distance_R = sensor_R.readRangeContinuousMillimeters();
 
+        //Smooth input using moving average
         smoothing_array_L.pop_front();
         smoothing_array_R.pop_front();
         for (int i = 0; i < array_len - 1; i++) {
@@ -118,7 +120,7 @@ void sensorTask(void *params) {
         smoothing_array_L.push_back(distance_L);
         smoothing_array_R.push_back(distance_R);
 
-        //Do not play anything, while at least one hand is outside of the range
+        //Do not play anything, while at least one hand is out of range
         if (distance_L > DISABLE_RANGE || distance_R > DISABLE_RANGE) {
             target_amplitude -= 100.0;
             if (target_amplitude < 0.0)
@@ -129,20 +131,20 @@ void sensorTask(void *params) {
             if (distance_L > MAX_RANGE) distance_L = MAX_RANGE;
             if (old_distance_L != distance_L) {
                 old_distance_L = distance_L;
+                global_range = distance_L;
                 target_frequency = static_cast<float>(map(distance_L, MIN_RANGE, MAX_RANGE, target_min_freq * 100, target_max_freq * 100)) / 100.0;
             }
             if (distance_R < MIN_RANGE) distance_R = MIN_RANGE;
             if (distance_R > MAX_RANGE) distance_R = MAX_RANGE;
             if (old_distance_R != distance_R) {
                 old_distance_R = distance_R;
-                target_amplitude = static_cast<float>(map(distance_R, MIN_RANGE, MAX_RANGE, 800, 3260));
+                target_amplitude = static_cast<float>(map(distance_R, MIN_RANGE, MAX_RANGE, 0, 2048));
             }
         }
     }
 }
 
-
-//TODO refactor and USE
+//not currently used
 Entry *startFunction(int *position, bool *select, Entry *entry) {
     if (!started) {
         started = true;
@@ -165,7 +167,6 @@ Entry *startFunction(int *position, bool *select, Entry *entry) {
     return entry;
 }
 
-/*----(Tasks)----*/
 //menu task for menu setup and execution
 void menuTask(void *params) {
     printf("u8g2 begin: %d\n", u8g2.begin());
@@ -179,7 +180,7 @@ void menuTask(void *params) {
     //Create menu
     menu.begin();   //start menu
     menu.addByName("root",            "Status",          toggle, &start_data, {"stopped", "running"});
-    menu.addByName("root",            "Wave",            picker, &target_wave_type, {"sine", "square", "triangle"});
+    menu.addByName("root",            "Wave",            picker, &target_wave_type, {"sine", "square", "triangle", "custom"});
     menu.addByName("root",            "Skew",            counter, 0, 100, &target_skew);
     menu.addByName("root",            "Duty cycle",      counter, 0, 100, &target_duty_cycle);
     menu.addByName("root",            "Settings",        "Settings");
@@ -220,7 +221,6 @@ void menuTask(void *params) {
         position = encoder.getCount();
         menu.render(&position, &select, update_menu);
         encoder.setCount(position);
-        delay(1);
     }
 }
 
@@ -237,9 +237,6 @@ void playTask(void *params) {
     uint16_t pos = 0;   //starting position
     int16_t int_sample; //final sample
 
-    //this is somehow required?????????????
-    //printf("playTask default frequency: %f\n", frequency);
-    //printf("playTask default amplitude: %f\n", AMPLITUDE);
     delay(100);
 
     //TODO replacing SAMPLE_RATE and TABLE_SIZE makes this not report to watchdog
@@ -250,40 +247,47 @@ void playTask(void *params) {
         delta = (frequency * TABLE_SIZE) / SAMPLE_RATE;     //calculate delta - change in our non-existant lookup table
         pos += delta;                                       //move to next position
 
+        //change amplitude only when going through zero
+        if (int_sample == 0)
+            amplitude = target_amplitude;
+
         //generate apropriate wave type
         switch (target_wave_type) {
             case sine:
-                int_sample = (int16_t)(amplitude * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * pos));   //calculate sine * amplitudebreak;
+                int_sample = static_cast<int16_t>(amplitude * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * pos));   //calculate sine * amplitudebreak;
                 break;
 
             case square:
                 if (pos < (TABLE_SIZE / 100 * target_duty_cycle))
-                    int_sample = (int16_t)amplitude;
+                    int_sample = static_cast<int16_t>(amplitude);
                 else
-                    int_sample = (int16_t)(-amplitude);
+                    int_sample = static_cast<int16_t>(-amplitude);
                 break;
 
             case triangle:
                 t_peak_index = (0 * target_skew + (TABLE_SIZE / 2) * (MAX_SKEW - target_skew)) / MAX_SKEW;
                 t_trough_index = TABLE_SIZE - t_peak_index;
-                rise_delta = (float)amplitude / t_peak_index;
-                fall_delta = (float)amplitude / ((t_trough_index - t_peak_index) / 2);
+                rise_delta = static_cast<float>(amplitude / t_peak_index);
+                fall_delta = static_cast<float>(amplitude / ((t_trough_index - t_peak_index) / 2));
                 if (pos < t_peak_index) 
-                    int_sample =  (int16_t)(rise_delta * pos);
+                    int_sample =  static_cast<int16_t>(rise_delta * pos);
                 else if (pos < t_trough_index)
-                    int_sample = (int16_t)(amplitude - fall_delta * (pos - t_peak_index));
+                    int_sample = static_cast<int16_t>(amplitude - fall_delta * (pos - t_peak_index));
                 else
-                    int_sample = (int16_t)(-amplitude + rise_delta * (pos - t_trough_index));
+                    int_sample = static_cast<int16_t>(-amplitude + rise_delta * (pos - t_trough_index));
+                break;
+            
+            case custom_wave:
+                //int_sample = static_cast<int16_t>(amplitude * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * pos));
+                float x = 2.0 * M_PI * (1.0 / TABLE_SIZE) * pos;
+                float modifier = static_cast<float>(map(global_range, MIN_RANGE, MAX_RANGE, 1000, 0) / 1000.0);
+                int_sample = static_cast<int16_t>(amplitude * sin(x + sin(x) + modifier));
                 break;
         }
 
-        //change amplitude only when going through zero
-        if (int_sample == 0)
-            amplitude = target_amplitude;
-
         //write sample to driver
         size_t i2s_bytes_write;
-        i2s_write(I2S_NUM_1, &int_sample, sizeof(uint16_t), &i2s_bytes_write, portMAX_DELAY);
+        i2s_write(I2S_NUM_1, &int_sample, sizeof(int16_t), &i2s_bytes_write, portMAX_DELAY);
 
         //overflow fix
         if (pos >= TABLE_SIZE)
@@ -295,11 +299,11 @@ void playTask(void *params) {
 
 void setup(void) {
     //i2c configuration
-    Wire.begin(SDA, SCL, 100000);   //display wire
-    Wire1.begin(18, 19, 400000);            //sensors wire
+    Wire.begin(SDA, SCL, 400000);   //display wire
+    Wire1.begin(18, 19, 400000);    //sensors wire
 
 
-    //encoder configuration (used only inside menu)
+    //encoder configuration (used only for menu)
     encoder.attachSingleEdge(36, 39);
     encoder.setFilter(1023);
     encoder.clearCount();
@@ -317,7 +321,7 @@ void setup(void) {
     
     //i2s config for writing both channels of I2S
     i2s_config_t i2sConfig = {
-        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
+        .mode = static_cast<i2s_mode_t>(I2S_MODE_MASTER | I2S_MODE_TX),
         .sample_rate = SAMPLE_RATE,
         .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
         .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
