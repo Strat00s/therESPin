@@ -15,6 +15,10 @@
 //custom
 #include "MenuLib/menu.hpp"
 
+TODO: Changeable working table size
+TODO: Changeable working nonlinearity of hand position
+TODO: (if time) move to whole numbers instead of floats for speed (and maybe better theremin like wave)
+
 using namespace std;
 
 #define TABLE_SIZE 65536 //table size for calculations (wave samples) -> how many waves can be created
