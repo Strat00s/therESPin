@@ -18,6 +18,7 @@
 TODO: Changeable working table size
 TODO: Changeable working nonlinearity of hand position
 TODO: (if time) move to whole numbers instead of floats for speed (and maybe better theremin like wave)
+TODO: finish final menu
 
 using namespace std;
 
