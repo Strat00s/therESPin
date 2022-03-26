@@ -57,8 +57,8 @@ U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);   //display
 Menu menu(&u8g2);                                                   //menu
 
 //global variables for data exchange and settings
-float target_frequency = MIN_FREQ;
-float target_amplitude = AMPLITUDE;
+int target_frequency = MIN_FREQ;
+int target_amplitude = AMPLITUDE;
 int target_wave_type = 3;
 int target_skew = 50;
 int target_duty_cycle = 50;
@@ -134,13 +134,13 @@ void sensorTask(void *params) {
             if (old_distance_L != distance_L) {
                 old_distance_L = distance_L;
                 global_range = distance_L;
-                target_frequency = static_cast<float>(map(distance_L, MIN_RANGE, MAX_RANGE, target_min_freq * 100, target_max_freq * 100)) / 100.0;
+                target_frequency = map(distance_L, MIN_RANGE, MAX_RANGE, target_min_freq, target_max_freq);
             }
             if (distance_R < MIN_RANGE) distance_R = MIN_RANGE;
             if (distance_R > MAX_RANGE) distance_R = MAX_RANGE;
             if (old_distance_R != distance_R) {
                 old_distance_R = distance_R;
-                target_amplitude = static_cast<float>(map(distance_R, MIN_RANGE, MAX_RANGE, 0, 2048));
+                target_amplitude = map(distance_R, MIN_RANGE, MAX_RANGE, 0, 2048);
             }
         }
     }
@@ -185,17 +185,16 @@ void menuTask(void *params) {
     //Create menu
     menu.begin();   //start menu
     //menu.addByName("root",            "Status screen",  "Header", startFunction);
-    menu.addByName("root",            "Start",      toggle, &start_data, {"idle", "running"});
+    menu.addByName("root",            "Start",           toggle, &start_data, {"idle", "running"});
     menu.addByName("root",            "Wave",            picker, &target_wave_type, {"sine", "square", "triangle", "custom"});
     menu.addByName("root",            "Skew",            counter, 0, 100, &target_skew);
     menu.addByName("root",            "Duty cycle",      counter, 0, 100, &target_duty_cycle);
     menu.addByName("root",            "Settings",        "Settings");
     menu.addByName("Settings",        "Steps",           picker, &settings_mod_data, {"1", "10", "100", "1000"});
-    menu.addByName("Settings",        "Table size X",      counter, 32, 65536, &target_table_size, &settings_mod);    //Cannot edit as of now
-    menu.addByName("Settings",        "Sample rate X",     counter, 44100, 96000, &target_sample_rate, &settings_mod);  //Cannot edit as of now
+    menu.addByName("Settings",        "Table size X",    counter, 32, 65536, &target_table_size, &settings_mod);    //Cannot edit as of now
     menu.addByName("Settings",        "Frequency range", "F. range");
-    menu.addByName("Frequency range", "Minimum",          counter, 0, 22049, &target_min_freq, &settings_mod);
-    menu.addByName("Frequency range", "Maximum",          counter, 1, 22050, &target_max_freq, &settings_mod);
+    menu.addByName("Frequency range", "Minimum",         counter, 0, 22049, &target_min_freq, &settings_mod);
+    menu.addByName("Frequency range", "Maximum",         counter, 1, 22050, &target_max_freq, &settings_mod);
     printf("Menus added\n");
 
     int position = 0;
@@ -269,9 +268,9 @@ void playTask(void *params) {
 
             case square:
                 if (pos < (TABLE_SIZE / 100 * target_duty_cycle))
-                    int_sample = static_cast<int16_t>(amplitude);
+                    int_sample = static_cast<int16_t>(target_amplitude);
                 else
-                    int_sample = static_cast<int16_t>(-amplitude);
+                    int_sample = static_cast<int16_t>(-target_amplitude);
                 break;
 
             case triangle:
