@@ -1,5 +1,7 @@
 #include "menu.hpp"
 
+#include <iostream>
+
 Menu::Menu(U8G2* u8g2) {
     this->u8g2 = u8g2;                                                 //save u8h2 object
     Entry *root = new Entry(this->u8g2, "root", "Main menu", nullptr); //create default root item
@@ -134,11 +136,13 @@ Entry *Menu::getEntryByName(std::string name) {
 }
 
 
-void Menu::render(int *value, bool *select, bool update) {
+void Menu::render(int *value, bool *select, bool *update) {
     //execute entry function on select, update or data change
-    if ((old_value != *value) || *select || update) {
+    if ((old_value != *value) || *select || *update == true) {
+        std::cout << "Old: " << old_value << "| val: " << *value << " | sel: " << *select << " | update: " << *update << std::endl;
         current_entry = current_entry->execute(value, select, current_entry);
         old_value = *value;
+        *update = false;
     }
 
     //cursour blinking on select

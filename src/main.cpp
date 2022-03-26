@@ -15,30 +15,31 @@
 //custom
 #include "MenuLib/menu.hpp"
 
-TODO: Changeable working table size
-TODO: Changeable working nonlinearity of hand position
-TODO: (if time) move to whole numbers instead of floats for speed (and maybe better theremin like wave)
-TODO: finish final menu
+//TODO: Changeable working table size
+//TODO: (if time) move to whole numbers instead of floats for speed (and maybe better theremin like wave)
+//TODO: finish final menu
 
 using namespace std;
 
-#define TABLE_SIZE 65536 //table size for calculations (wave samples) -> how many waves can be created
-#define AMPLITUDE 512
-#define MAX_SKEW 100   //max skew for triangle wave
+#define TABLE_SIZE 65536    //table size for calculations (wave samples) -> how granual the wave is
+#define AMPLITUDE 512       //kinda arbitrary value
+#define MAX_SKEW 100        //max skew for triangle wave
 
-#define SAMPLE_RATE 44100 //audio sample rate
+#define SAMPLE_RATE 44100   //audio sample rate
 #define MIN_FREQ 65.41
 #define MAX_FREQ 3951.07
 //#define MAX_FREQ 22050
 
-#define SENSOR_L_PIN 4
-#define SENSOR_R_PIN 0
-#define SENSOR_L_ADDR 18
-#define SENSOR_R_ADDR 19
+//sensors
+#define SENSOR_L_PIN 4      //first sensor pin
+#define SENSOR_R_PIN 0      //second sensor pin
+#define SENSOR_L_ADDR 18    //first sensor I2C address
+#define SENSOR_R_ADDR 19    //second sensor I2C address
 
-#define DISABLE_RANGE 1000
-#define MAX_RANGE 800
-#define MIN_RANGE 60
+//detection ranges (in mm)
+#define DISABLE_RANGE 1000  //range where sound generation will be disabled (amplitude will be lowered to 0)
+#define MAX_RANGE 800       //maximum detection range
+#define MIN_RANGE 60        //minimum detection range
 
 
 enum waves {
@@ -49,18 +50,13 @@ enum waves {
 };
 
 //classes
-ESP32Encoder encoder;   //encoder
-VL53L0X sensor_L;
+ESP32Encoder encoder;                                               //encoder
+VL53L0X sensor_L;                                                   //sensors
 VL53L0X sensor_R;
-U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
-Menu menu(&u8g2);
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);   //display
+Menu menu(&u8g2);                                                   //menu
 
-//task handles
-TaskHandle_t menu_handle;
-TaskHandle_t sensor_handle;
-TaskHandle_t play_handle;
-
-//global variables for data exchange
+//global variables for data exchange and settings
 float target_frequency = MIN_FREQ;
 float target_amplitude = AMPLITUDE;
 int target_wave_type = 3;
@@ -72,6 +68,7 @@ int target_sample_rate = SAMPLE_RATE;
 int target_table_size = TABLE_SIZE;
 bool update_menu = false;
 bool started = false;
+int start_data = 0;
 
 
 int global_range = 0;
@@ -151,21 +148,24 @@ void sensorTask(void *params) {
 
 //not currently used
 Entry *startFunction(int *position, bool *select, Entry *entry) {
-    if (!started) {
-        started = true;
-        update_menu = true;
-        i2s_start(I2S_NUM_1);
+    //running
+    if (start_data) {
+        u8g2.clearBuffer();
+        u8g2.setCursor(10, 20);
+        u8g2.printf("%f", target_frequency);
+        u8g2.sendBuffer();
     }
-
-    u8g2.clearBuffer();
-    u8g2.setCursor(10, 20);
-    u8g2.printf("%f", target_frequency);
-    u8g2.sendBuffer();
+    else {
+        u8g2.clearBuffer();
+        u8g2.setCursor(10, 20);
+        u8g2.printf("not runnign");
+        u8g2.sendBuffer();
+    }
     if (*select) {
         *select = false;
         update_menu = false;
         started = false;
-        i2s_stop(I2S_NUM_1);
+        //i2s_stop(I2S_NUM_1);
         entry->resetToParent(position);
         return entry->parent();
     }
@@ -178,13 +178,14 @@ void menuTask(void *params) {
     u8g2.setFont(u8g2_font_6x10_mf);   //font dimensions: 11x11
     u8g2.clearBuffer();
 
-    int start_data = 0;
+    //int start_data = 0;
     int settings_mod = 1;
     int settings_mod_data = 2;
 
     //Create menu
     menu.begin();   //start menu
-    menu.addByName("root",            "Status",          toggle, &start_data, {"stopped", "running"});
+    //menu.addByName("root",            "Status screen",  "Header", startFunction);
+    menu.addByName("root",            "Start",      toggle, &start_data, {"idle", "running"});
     menu.addByName("root",            "Wave",            picker, &target_wave_type, {"sine", "square", "triangle", "custom"});
     menu.addByName("root",            "Skew",            counter, 0, 100, &target_skew);
     menu.addByName("root",            "Duty cycle",      counter, 0, 100, &target_duty_cycle);
@@ -211,20 +212,24 @@ void menuTask(void *params) {
         }
 
         if (start_data && !running) {
+            menu.getEntryByName("Start")->name = "Stop";
+            update_menu = true;
             i2s_start(I2S_NUM_1);
             running = true;
         }
         if (!start_data && running) {
+            menu.getEntryByName("Stop")->name = "Start";
+            update_menu = true;
             i2s_stop(I2S_NUM_1);
             running = false;
         }
 
         if (!digitalRead(15)) {
-        while(!digitalRead(15));
-            select = true;
+            while(!digitalRead(15));
+                select = true;
         }
         position = encoder.getCount();
-        menu.render(&position, &select, update_menu);
+        menu.render(&position, &select, &update_menu);
         encoder.setCount(position);
     }
 }
@@ -304,8 +309,8 @@ void playTask(void *params) {
 
 void setup(void) {
     //i2c configuration
-    Wire.begin(SDA, SCL, 400000);   //display wire
-    Wire1.begin(18, 19, 400000);    //sensors wire
+    Wire.begin (SDA, SCL, 400000);  //display wire
+    Wire1.begin(18,  19,  400000);  //sensors wire
 
 
     //encoder configuration (used only for menu)
@@ -318,23 +323,23 @@ void setup(void) {
     //i2s configuration
     //i2s pins
     i2s_pin_config_t i2sPins = {
-        .bck_io_num = 16,
-        .ws_io_num = 17,
+        .bck_io_num   = 16,
+        .ws_io_num    = 17,
         .data_out_num = 25,
-        .data_in_num = -1
+        .data_in_num  = -1
     };
     
     //i2s config for writing both channels of I2S
     i2s_config_t i2sConfig = {
-        .mode = static_cast<i2s_mode_t>(I2S_MODE_MASTER | I2S_MODE_TX),
-        .sample_rate = SAMPLE_RATE,
-        .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
-        .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
+        .mode                 = static_cast<i2s_mode_t>(I2S_MODE_MASTER | I2S_MODE_TX),
+        .sample_rate          = SAMPLE_RATE,
+        .bits_per_sample      = I2S_BITS_PER_SAMPLE_16BIT,
+        .channel_format       = I2S_CHANNEL_FMT_ONLY_LEFT,
         .communication_format = I2S_COMM_FORMAT_I2S,
-        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
-        .dma_buf_count = 4,
-        .dma_buf_len = 64,
-        .use_apll = true
+        .intr_alloc_flags     = ESP_INTR_FLAG_LEVEL1,
+        .dma_buf_count        = 4,
+        .dma_buf_len          = 64,
+        .use_apll             = true
     };
 
     i2s_driver_install(I2S_NUM_1, &i2sConfig, 0, NULL); //install and start i2s driver
@@ -344,9 +349,9 @@ void setup(void) {
     setCpuFrequencyMhz(240);
 
     //create tasks
-    xTaskCreatePinnedToCore(menuTask, "menu_task", 10000, NULL, 1, NULL, 1);    //menu task needs to be pinned to a signle core, to avoid garbage
-    xTaskCreate(sensorTask, "sensor_task", 10000, NULL, 2, NULL);
-    xTaskCreate(playTask, "play_task", 10000, NULL, 1, NULL);
+    xTaskCreatePinnedToCore(menuTask,   "menu_task",   5000, NULL, 10, NULL, 1);    //menu task needs to be pinned to a signle core, to avoid garbage
+    xTaskCreate            (sensorTask, "sensor_task", 2000, NULL, 10, NULL   );
+    xTaskCreate            (playTask,   "play_task",   5000, NULL, 10, NULL   );
 }
 
 

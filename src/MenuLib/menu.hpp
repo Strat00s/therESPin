@@ -3,13 +3,13 @@
 
 class Menu {
     private:
-        Entry *current_entry;         //current entry pointer
-        std::vector<Entry *> entries; //all entries vector
-        U8G2 *u8g2;                   //u8g2 object pointer
-        int entry_id_counter;         //entry counter for id increments
-        int old_value;                //old value for menu scroling
-        uint64_t blink_timer;         //cursor blinking timer
-        bool blink;                   //cursor blinking bool
+        Entry *current_entry;           //current entry pointer
+        std::vector<Entry *> entries;   //all entries vector
+        U8G2 *u8g2;                     //u8g2 object pointer
+        int entry_id_counter;           //entry counter for id increments
+        int old_value;                  //old value for menu scroling
+        uint64_t blink_timer;           //cursor blinking timer
+        bool blink;                     //cursor blinking bool
 
         /** @brief helper function for entry setup
          * 
@@ -204,7 +204,7 @@ class Menu {
          * @param select select value (ok, enter)
          * @param update should the menu be updated (false)
          */
-        void render(int *position, bool *select, bool update = false);
+        void render(int *position, bool *select, bool *update = nullptr);
 
         /** @brief return root index (0)
          * 
