@@ -16,8 +16,6 @@
 #include "MenuLib/menu.hpp"
 
 //TODO: Changeable working table size
-//TODO: (if time) move to whole numbers instead of floats for speed (and maybe better theremin like wave)
-//TODO: finish final menu
 //TODO: CLeanup
 
 using namespace std;
