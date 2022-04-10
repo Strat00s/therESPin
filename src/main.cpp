@@ -21,7 +21,7 @@
 
 using namespace std;
 
-#define TABLE_SIZE 65536    //table size for calculations (wave samples) -> how granual the wave is
+#define TABLE_SIZE 65536    //table size for calculations (wave samples) -> how granual the frequency is
 #define AMPLITUDE 512       //kinda arbitrary value
 #define MAX_SKEW 100        //max skew for triangle wave
 
@@ -38,8 +38,10 @@ using namespace std;
 
 //detection ranges (in mm)
 #define DISABLE_RANGE 1000  //range where sound generation will be disabled (amplitude will be lowered to 0)
-#define MAX_RANGE 800       //maximum detection range
-#define MIN_RANGE 60        //minimum detection range
+#define MAX_RANGE 500       //maximum detection range
+#define MIN_RANGE 50        //minimum detection range
+
+#define CALIBRATION_OFFSET (-56)
 
 
 enum waves {
@@ -106,8 +108,8 @@ void sensorTask(void *params) {
     deque<int> smoothing_array_R = {0, 0, 0};
 
     while(true) {
-        distance_L = sensor_L.readRangeContinuousMillimeters();
-        distance_R = sensor_R.readRangeContinuousMillimeters();
+        distance_L = sensor_L.readRangeContinuousMillimeters() + CALIBRATION_OFFSET;
+        distance_R = sensor_R.readRangeContinuousMillimeters() + CALIBRATION_OFFSET;
 
         //Smooth input using moving average
         smoothing_array_L.pop_front();
@@ -124,9 +126,9 @@ void sensorTask(void *params) {
 
         //Do not play anything, while at least one hand is out of range
         if (distance_L > DISABLE_RANGE || distance_R > DISABLE_RANGE) {
-            target_amplitude -= 100.0;
-            if (target_amplitude < 0.0)
-                target_amplitude = 0.0;
+            target_amplitude -= 100;
+            if (target_amplitude < 0)
+                target_amplitude = 0;
         }
         else {
             if (distance_L < MIN_RANGE) distance_L = MIN_RANGE;
@@ -248,12 +250,12 @@ void playTask(void *params) {
 
     delay(100);
 
-    //TODO replacing SAMPLE_RATE and TABLE_SIZE makes this not report to watchdog
+    //TODO fix variable table_size causing freezes
 
     while (true) {
         //smooth frequency "stitching"
         frequency += 0.01 * (target_frequency - frequency); //"slowly" aproach our desired frequency
-        delta = (frequency * TABLE_SIZE) / SAMPLE_RATE;     //calculate delta - change in our non-existant lookup table
+        delta = (frequency * target_table_size) / SAMPLE_RATE;     //calculate delta - change in our non-existant lookup table
         pos += delta;                                       //move to next position
 
         //change amplitude only when going through zero
@@ -263,19 +265,19 @@ void playTask(void *params) {
         //generate apropriate wave type
         switch (target_wave_type) {
             case sine:
-                int_sample = static_cast<int16_t>(amplitude * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * pos));   //calculate sine * amplitudebreak;
+                int_sample = static_cast<int16_t>(sin(2.0 * M_PI * (1.0 / target_table_size) * pos) * amplitude);   //calculate sine * amplitudebreak;
                 break;
 
             case square:
-                if (pos < (TABLE_SIZE / 100 * target_duty_cycle))
+                if (pos < (target_table_size / 100 * target_duty_cycle))
                     int_sample = static_cast<int16_t>(target_amplitude);
                 else
                     int_sample = static_cast<int16_t>(-target_amplitude);
                 break;
 
             case triangle:
-                t_peak_index = (0 * target_skew + (TABLE_SIZE / 2) * (MAX_SKEW - target_skew)) / MAX_SKEW;
-                t_trough_index = TABLE_SIZE - t_peak_index;
+                t_peak_index = (0 * target_skew + (target_table_size / 2) * (MAX_SKEW - target_skew)) / MAX_SKEW;
+                t_trough_index = target_table_size - t_peak_index;
                 rise_delta = static_cast<float>(amplitude / t_peak_index);
                 fall_delta = static_cast<float>(amplitude / ((t_trough_index - t_peak_index) / 2));
                 if (pos < t_peak_index) 
@@ -287,9 +289,9 @@ void playTask(void *params) {
                 break;
             
             case custom_wave:
-                //int_sample = static_cast<int16_t>(amplitude * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * pos));
-                float x = 2.0 * M_PI * (1.0 / TABLE_SIZE) * pos;
-                float modifier = static_cast<float>(map(global_range, MIN_RANGE, MAX_RANGE, 1000, 0) / 1000.0);
+                //int_sample = static_cast<int16_t>(amplitude * sin(2.0 * M_PI * (1.0 / target_table_size) * pos));
+                float x = 2.0 * M_PI * (1.0 / target_table_size) * pos;
+                float modifier = static_cast<float>(map(global_range, MIN_RANGE, MAX_RANGE, 1000, 0) / 1000.0); //TODO fix
                 int_sample = static_cast<int16_t>(amplitude * sin(x + sin(x) + modifier));
                 break;
         }
@@ -299,8 +301,8 @@ void playTask(void *params) {
         i2s_write(I2S_NUM_1, &int_sample, sizeof(int16_t), &i2s_bytes_write, portMAX_DELAY);
 
         //overflow fix
-        if (pos >= TABLE_SIZE)
-            pos = pos - TABLE_SIZE;
+        if (pos >= target_table_size)
+            pos = pos - target_table_size;
     }
 }
 
