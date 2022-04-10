@@ -18,6 +18,7 @@
 //TODO: Changeable working table size
 //TODO: (if time) move to whole numbers instead of floats for speed (and maybe better theremin like wave)
 //TODO: finish final menu
+//TODO: CLeanup
 
 using namespace std;
 
@@ -38,7 +39,7 @@ using namespace std;
 
 //detection ranges (in mm)
 #define DISABLE_RANGE 1000  //range where sound generation will be disabled (amplitude will be lowered to 0)
-#define MAX_RANGE 500       //maximum detection range
+#define MAX_RANGE 800       //maximum detection range
 #define MIN_RANGE 50        //minimum detection range
 
 #define CALIBRATION_OFFSET (-56)
@@ -71,6 +72,10 @@ int target_table_size = TABLE_SIZE;
 bool update_menu = false;
 bool started = false;
 int start_data = 0;
+
+int min_range = MIN_RANGE;
+int max_range = MAX_RANGE;
+int disable_range = DISABLE_RANGE;
 
 
 int global_range = 0;
@@ -125,24 +130,24 @@ void sensorTask(void *params) {
         smoothing_array_R.push_back(distance_R);
 
         //Do not play anything, while at least one hand is out of range
-        if (distance_L > DISABLE_RANGE || distance_R > DISABLE_RANGE) {
+        if (distance_L > disable_range || distance_R > disable_range) {
             target_amplitude -= 100;
             if (target_amplitude < 0)
                 target_amplitude = 0;
         }
         else {
-            if (distance_L < MIN_RANGE) distance_L = MIN_RANGE;
-            if (distance_L > MAX_RANGE) distance_L = MAX_RANGE;
+            if (distance_L < min_range) distance_L = min_range;
+            if (distance_L > max_range) distance_L = max_range;
             if (old_distance_L != distance_L) {
                 old_distance_L = distance_L;
                 global_range = distance_L;
-                target_frequency = map(distance_L, MIN_RANGE, MAX_RANGE, target_min_freq, target_max_freq);
+                target_frequency = map(distance_L, min_range, max_range, target_min_freq, target_max_freq);
             }
-            if (distance_R < MIN_RANGE) distance_R = MIN_RANGE;
-            if (distance_R > MAX_RANGE) distance_R = MAX_RANGE;
+            if (distance_R < min_range) distance_R = min_range;
+            if (distance_R > max_range) distance_R = max_range;
             if (old_distance_R != distance_R) {
                 old_distance_R = distance_R;
-                target_amplitude = map(distance_R, MIN_RANGE, MAX_RANGE, 0, 2048);
+                target_amplitude = map(distance_R, min_range, max_range, 0, 2048);
             }
         }
     }
@@ -192,11 +197,17 @@ void menuTask(void *params) {
     menu.addByName("root",            "Skew",            counter, 0, 100, &target_skew);
     menu.addByName("root",            "Duty cycle",      counter, 0, 100, &target_duty_cycle);
     menu.addByName("root",            "Settings",        "Settings");
-    menu.addByName("Settings",        "Steps",           picker, &settings_mod_data, {"1", "10", "100", "1000"});
-    menu.addByName("Settings",        "Table size X",    counter, 32, 65536, &target_table_size, &settings_mod);    //Cannot edit as of now
+    menu.addByName("Settings",        "Change steps",           picker, &settings_mod_data, {"1", "10", "100", "1000"});
     menu.addByName("Settings",        "Frequency range", "F. range");
     menu.addByName("Frequency range", "Minimum",         counter, 0, 22049, &target_min_freq, &settings_mod);
     menu.addByName("Frequency range", "Maximum",         counter, 1, 22050, &target_max_freq, &settings_mod);
+    menu.addByName("Settings",        "Experimental",    "Experimental");
+    
+    menu.addByName("Experimental",        "Table size",    counter, 32, 65536, &target_table_size, &settings_mod);
+    menu.addByName("Experimental",        "Minimum range",    counter, 0, 2000, &min_range, &settings_mod);
+    menu.addByName("Experimental",        "Maximum range",    counter, 0, 2000, &max_range, &settings_mod);
+    menu.addByName("Experimental",        "Disable range",    counter, 0, 2000, &disable_range, &settings_mod);
+    
     printf("Menus added\n");
 
     int position = 0;
@@ -291,7 +302,7 @@ void playTask(void *params) {
             case custom_wave:
                 //int_sample = static_cast<int16_t>(amplitude * sin(2.0 * M_PI * (1.0 / target_table_size) * pos));
                 float x = 2.0 * M_PI * (1.0 / target_table_size) * pos;
-                float modifier = static_cast<float>(map(global_range, MIN_RANGE, MAX_RANGE, 1000, 0) / 1000.0); //TODO fix
+                float modifier = static_cast<float>(map(global_range, min_range, max_range, 1000, 0) / 1000.0); //TODO fix
                 int_sample = static_cast<int16_t>(amplitude * sin(x + sin(x) + modifier));
                 break;
         }
