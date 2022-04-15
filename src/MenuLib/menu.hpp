@@ -79,10 +79,10 @@ class Menu {
          * 
          * @param parent_id parent id
          * @param name entry name
-         * @param item_type item type
+         * @param item_type item type (counter, picker, toggle, ...)
          * @param min min item value
          * @param max max item value
-         * @param start start index
+         * @param start start index pointer (variable will be modified on item change)
          * @param modifier by how much should item value change
          * @return Entry id on succes, -1 on failure 
          */
@@ -92,8 +92,8 @@ class Menu {
          * 
          * @param parent_id parent id
          * @param name entry name
-         * @param item_type item type
-         * @param start start index
+         * @param item_type item type (counter, picker, toggle, ...)
+         * @param start start index pointer (variable will be modified on item change)
          * @param options vector of strings containing options
          * @return Entry id on succes, -1 on failure 
          */
@@ -116,7 +116,7 @@ class Menu {
         //add entries to parents by name
         /** @brief Add copy of and already created entry 
          * 
-         * @param parent_name parent name
+         * @param parent_name parent menu name
          * @param entry entry to be added
          * @return Entry id on succes, -1 on failure
          */
@@ -124,7 +124,7 @@ class Menu {
         
         /** @brief Creat and add menu entry
          * 
-         * @param parent_name parent name
+         * @param parent_name parent menu name
          * @param name entry name
          * @param header menu header
          * @param function custom function pointer
@@ -134,12 +134,12 @@ class Menu {
         
         /** @brief Create and add counter item
          * 
-         * @param parent_name parent name
+         * @param parent_name parent menu name
          * @param name entry name
-         * @param item_type item type
+         * @param item_type item type (counter, picker, toggle, ...)
          * @param min min item value
          * @param max max item value
-         * @param start start index
+         * @param start starting value pointer (variable will be modified on item change)
          * @param modifier by how much should item value change
          * @return Entry id on succes, -1 on failure
          */
@@ -149,8 +149,8 @@ class Menu {
          * 
          * @param parent_name parent name
          * @param name entry name
-         * @param item_type item type
-         * @param start start index pointer
+         * @param item_type item type (counter, picker, toggle, ...)
+         * @param start start index pointer (variable will be modified on item change)
          * @param options vector of strings containing options
          * @return Entry id on succes, -1 on failure 
          */
