@@ -60,7 +60,7 @@ Menu menu(&u8g2);                                                   //menu
 //global variables for data exchange and settings
 int target_frequency = MIN_FREQ;
 int target_amplitude = AMPLITUDE;
-int target_wave_type = 3;
+int target_wave_type = 0;
 int target_skew = 50;
 int target_duty_cycle = 50;
 int target_min_freq = MIN_FREQ;
@@ -70,11 +70,12 @@ int target_table_size = TABLE_SIZE;
 bool update_menu = false;
 bool started = false;
 int start_data = 0;
-
 int min_range = MIN_RANGE;
 int max_range = MAX_RANGE;
 int disable_range = DISABLE_RANGE;
-
+int testing = 0;
+int test_frequency = 11025;
+int test_amplitude = 2048;
 
 int global_range = 0;
 
@@ -83,7 +84,7 @@ int global_range = 0;
 //sensor configuration rutine
 void registerSensor(int enable_pin, uint8_t address, VL53L0X *sensor) {
     pinMode(enable_pin, OUTPUT);
-    digitalWrite(enable_pin, HIGH); //enable sensor on enable_pinn
+    digitalWrite(enable_pin, HIGH); //enable sensor on enable_pin
     sensor->init(true);             //initialize the sensor
     sensor->setAddress(address);    //set new address (required as all sensors have the same default address)
     pinMode(enable_pin, INPUT);
@@ -111,6 +112,13 @@ void sensorTask(void *params) {
     deque<int> smoothing_array_R = {0, 0, 0};
 
     while(true) {
+        if (testing != 0) {
+            target_frequency = test_frequency;
+            target_amplitude = test_amplitude;
+            delay(100);
+            continue;
+        }
+        
         distance_L = sensor_L.readRangeContinuousMillimeters() + CALIBRATION_OFFSET;
         distance_R = sensor_R.readRangeContinuousMillimeters() + CALIBRATION_OFFSET;
 
@@ -190,21 +198,30 @@ void menuTask(void *params) {
     //Create menu
     menu.begin();   //start menu
     //menu.addByName("root",            "Status screen",  "Header", startFunction);
-    menu.addByName("root",            "Start",           toggle, &start_data, {"idle", "running"});
-    menu.addByName("root",            "Wave",            picker, &target_wave_type, {"sine", "square", "triangle", "custom"});
-    menu.addByName("root",            "Skew",            counter, 0, 100, &target_skew);
-    menu.addByName("root",            "Duty cycle",      counter, 0, 100, &target_duty_cycle);
-    menu.addByName("root",            "Settings",        "Settings");
-    menu.addByName("Settings",        "Change steps",           picker, &settings_mod_data, {"1", "10", "100", "1000"});
-    menu.addByName("Settings",        "Frequency range", "F. range");
-    menu.addByName("Frequency range", "Minimum",         counter, 0, 22049, &target_min_freq, &settings_mod);
-    menu.addByName("Frequency range", "Maximum",         counter, 1, 22050, &target_max_freq, &settings_mod);
-    menu.addByName("Settings",        "Experimental",    "Experimental");
+
+    menu.addByName("root", "Start",      toggle, &start_data, {"idle", "running"});
+    menu.addByName("root", "Wave",       picker, &target_wave_type, {"sine", "square", "triangle", "custom"});
+    menu.addByName("root", "Skew",       counter, 0, 100, &target_skew);
+    menu.addByName("root", "Duty cycle", counter, 0, 100, &target_duty_cycle);
+
+    menu.addByName("root",     "Settings",        "Settings");
     
-    menu.addByName("Experimental",        "Table size",    counter, 32, 65536, &target_table_size, &settings_mod);
-    menu.addByName("Experimental",        "Minimum range",    counter, 0, 2000, &min_range, &settings_mod);
-    menu.addByName("Experimental",        "Maximum range",    counter, 0, 2000, &max_range, &settings_mod);
-    menu.addByName("Experimental",        "Disable range",    counter, 0, 2000, &disable_range, &settings_mod);
+    menu.addByName("Settings", "Change step", picker, &settings_mod_data, {"1", "10", "100", "1000"});
+
+    menu.addByName("Settings", "Frequency range", "F. range");
+    menu.addByName("Settings", "Testing",         "Testing");
+    menu.addByName("Settings", "Experimental",    "Experimental");
+    
+    menu.addByName("Frequency range", "Minimum", counter, 0, 22049, &target_min_freq, &settings_mod);
+    menu.addByName("Frequency range", "Maximum", counter, 1, 22050, &target_max_freq, &settings_mod);
+    
+    menu.addByName("Testing", "Testing",   toggle, &testing, {"disabled", "enabled"});
+    menu.addByName("Testing", "Frequency", counter, 1, 22050, &test_frequency, &settings_mod);
+    menu.addByName("Testing", "Amplitude", counter, 0, 4096, &test_amplitude, &settings_mod);
+
+    menu.addByName("Experimental", "Minimum range", counter, 0, 2000, &min_range, &settings_mod);
+    menu.addByName("Experimental", "Maximum range", counter, 0, 2000, &max_range, &settings_mod);
+    menu.addByName("Experimental", "Disable range", counter, 0, 2000, &disable_range, &settings_mod);
     
     printf("Menus added\n");
 
@@ -264,8 +281,11 @@ void playTask(void *params) {
     while (true) {
         //smooth frequency "stitching"
         frequency += 0.01 * (target_frequency - frequency); //"slowly" aproach our desired frequency
-        delta = (frequency * target_table_size) / SAMPLE_RATE;     //calculate delta - change in our non-existant lookup table
-        pos += delta;                                       //move to next position
+        delta = (frequency * TABLE_SIZE) / SAMPLE_RATE;     //calculate delta - change in our non-existant lookup table
+        pos += static_cast<uint16_t>(delta);                //move to next position
+        //overflow fix
+        if (pos >= TABLE_SIZE)
+            pos = pos - TABLE_SIZE;
 
         //change amplitude only when going through zero
         if (int_sample == 0)
@@ -274,19 +294,19 @@ void playTask(void *params) {
         //generate apropriate wave type
         switch (target_wave_type) {
             case sine:
-                int_sample = static_cast<int16_t>(sin(2.0 * M_PI * (1.0 / target_table_size) * pos) * amplitude);   //calculate sine * amplitudebreak;
+                int_sample = static_cast<int16_t>(sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * pos) * amplitude);   //calculate sine * amplitudebreak;
                 break;
 
             case square:
-                if (pos < (target_table_size / 100 * target_duty_cycle))
+                if (pos < (TABLE_SIZE / 100 * target_duty_cycle))
                     int_sample = static_cast<int16_t>(target_amplitude);
                 else
                     int_sample = static_cast<int16_t>(-target_amplitude);
                 break;
 
             case triangle:
-                t_peak_index = (0 * target_skew + (target_table_size / 2) * (MAX_SKEW - target_skew)) / MAX_SKEW;
-                t_trough_index = target_table_size - t_peak_index;
+                t_peak_index = (0 * target_skew + (TABLE_SIZE / 2) * (MAX_SKEW - target_skew)) / MAX_SKEW;
+                t_trough_index = TABLE_SIZE - t_peak_index;
                 rise_delta = static_cast<float>(amplitude / t_peak_index);
                 fall_delta = static_cast<float>(amplitude / ((t_trough_index - t_peak_index) / 2));
                 if (pos < t_peak_index) 
@@ -298,9 +318,9 @@ void playTask(void *params) {
                 break;
             
             case custom_wave:
-                //int_sample = static_cast<int16_t>(amplitude * sin(2.0 * M_PI * (1.0 / target_table_size) * pos));
-                float x = 2.0 * M_PI * (1.0 / target_table_size) * pos;
-                float modifier = static_cast<float>(map(global_range, min_range, max_range, 1000, 0) / 1000.0); //TODO fix
+                //int_sample = static_cast<int16_t>(amplitude * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * pos));
+                float x = 2.0 * M_PI * (1.0 / TABLE_SIZE) * pos;
+                float modifier = static_cast<float>(map(target_frequency, target_min_freq, target_max_freq, 1000, 0) / 1000.0); //TODO fix
                 int_sample = static_cast<int16_t>(amplitude * sin(x + sin(x) + modifier));
                 break;
         }
@@ -308,10 +328,6 @@ void playTask(void *params) {
         //write sample to driver
         size_t i2s_bytes_write;
         i2s_write(I2S_NUM_1, &int_sample, sizeof(int16_t), &i2s_bytes_write, portMAX_DELAY);
-
-        //overflow fix
-        if (pos >= target_table_size)
-            pos = pos - target_table_size;
     }
 }
 
@@ -356,14 +372,15 @@ void setup(void) {
     i2s_stop(I2S_NUM_1);                                //instantly stop the driver
     i2s_set_pin(I2S_NUM_1, &i2sPins);                   //set up the i2s pins
     i2s_zero_dma_buffer(I2S_NUM_1);                     //clear the DMA buffers
-    setCpuFrequencyMhz(240);
+    setCpuFrequencyMhz(240);                            //make sure that mcu is running as fast as possible
 
     //create tasks
-    xTaskCreatePinnedToCore(menuTask,   "menu_task",   5000, NULL, 10, NULL, 1);    //menu task needs to be pinned to a signle core, to avoid garbage
-    xTaskCreate            (sensorTask, "sensor_task", 2000, NULL, 10, NULL   );
-    xTaskCreate            (playTask,   "play_task",   5000, NULL, 10, NULL   );
+    xTaskCreatePinnedToCore(menuTask,   "menuTask",   5000, NULL, 10, NULL, 1);    //menu task needs to be pinned to a signle core, to avoid garbage
+    xTaskCreate            (sensorTask, "sensorTask", 2000, NULL, 10, NULL   );
+    xTaskCreate            (playTask,   "playTask",   5000, NULL, 10, NULL   );
 }
 
 
 void loop(void) {
+    vTaskDelete(NULL);
 }
