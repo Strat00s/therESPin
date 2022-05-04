@@ -15,10 +15,9 @@
 //custom
 #include "menu.hpp"
 
-//TODO: Changeable working table size
-//TODO: CLeanup
 
 using namespace std;
+
 
 #define TABLE_SIZE 65536    //table size for calculations (wave samples) -> how granual the frequency is
 #define AMPLITUDE 512       //kinda arbitrary value
@@ -187,7 +186,7 @@ void sensorTask(void *params) {
 
 //menu task for menu setup and execution
 void menuTask(void *params) {
-    printf("u8g2 begin: %d\n", u8g2.begin());
+    u8g2.begin();
     u8g2.setFont(u8g2_font_6x10_mf);   //font dimensions: 11x11
     u8g2.clearBuffer();
 
@@ -222,8 +221,6 @@ void menuTask(void *params) {
     menu.addByName("Experimental", "Minimum range", counter, 0, 2000, &min_range, &settings_mod);
     menu.addByName("Experimental", "Maximum range", counter, 0, 2000, &max_range, &settings_mod);
     menu.addByName("Experimental", "Disable range", counter, 0, 2000, &disable_range, &settings_mod);
-    
-    printf("Menus added\n");
 
     int position = 0;
     bool select = false;
@@ -276,8 +273,6 @@ void playTask(void *params) {
 
     delay(100);
 
-    //TODO fix variable table_size causing freezes
-
     while (true) {
         //smooth frequency "stitching"
         frequency += 0.01 * (target_frequency - frequency); //"slowly" aproach our desired frequency
@@ -320,7 +315,7 @@ void playTask(void *params) {
             case custom_wave:
                 //int_sample = static_cast<int16_t>(amplitude * sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * pos));
                 float x = 2.0 * M_PI * (1.0 / TABLE_SIZE) * pos;
-                float modifier = static_cast<float>(map(target_frequency, target_min_freq, target_max_freq, 1000, 0) / 1000.0); //TODO fix
+                float modifier = static_cast<float>(map(target_frequency, target_min_freq, target_max_freq, 1000, 0) / 1000.0); //create modifier to change wave shape during frequency change
                 int_sample = static_cast<int16_t>(amplitude * sin(x + sin(x) + modifier));
                 break;
         }
