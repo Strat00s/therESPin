@@ -289,6 +289,7 @@ void playTask(void *params) {
         //generate apropriate wave type
         switch (target_wave_type) {
             case sine:
+                //inspired by https://github.com/adafruit/Adafruit_ZeroI2S/blob/master/examples/tone_generator/tone_generator.ino
                 int_sample = static_cast<int16_t>(sin(2.0 * M_PI * (1.0 / TABLE_SIZE) * pos) * amplitude);   //calculate sine * amplitudebreak;
                 break;
 
