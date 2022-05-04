@@ -13,7 +13,7 @@
 #include <driver/i2s.h>
 #include <driver/dac.h>
 //custom
-#include "MenuLib/menu.hpp"
+#include "menu.hpp"
 
 //TODO: Changeable working table size
 //TODO: CLeanup
@@ -160,30 +160,30 @@ void sensorTask(void *params) {
 }
 
 //not currently used
-Entry *startFunction(int *position, bool *select, Entry *entry) {
-    //running
-    if (start_data) {
-        u8g2.clearBuffer();
-        u8g2.setCursor(10, 20);
-        u8g2.printf("%f", target_frequency);
-        u8g2.sendBuffer();
-    }
-    else {
-        u8g2.clearBuffer();
-        u8g2.setCursor(10, 20);
-        u8g2.printf("not runnign");
-        u8g2.sendBuffer();
-    }
-    if (*select) {
-        *select = false;
-        update_menu = false;
-        started = false;
-        //i2s_stop(I2S_NUM_1);
-        entry->resetToParent(position);
-        return entry->parent();
-    }
-    return entry;
-}
+//Entry *startFunction(int *position, bool *select, Entry *entry) {
+//    //running
+//    if (start_data) {
+//        u8g2.clearBuffer();
+//        u8g2.setCursor(10, 20);
+//        u8g2.printf("%f", target_frequency);
+//        u8g2.sendBuffer();
+//    }
+//    else {
+//        u8g2.clearBuffer();
+//        u8g2.setCursor(10, 20);
+//        u8g2.printf("not runnign");
+//        u8g2.sendBuffer();
+//    }
+//    if (*select) {
+//        *select = false;
+//        update_menu = false;
+//        started = false;
+//        //i2s_stop(I2S_NUM_1);
+//        entry->resetToParent(position);
+//        return entry->parent();
+//    }
+//    return entry;
+//}
 
 //menu task for menu setup and execution
 void menuTask(void *params) {
