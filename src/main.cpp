@@ -331,7 +331,7 @@ void playTask(void *params) {
 void setup(void) {
     //i2c configuration
     Wire.begin (SDA, SCL, 400000);  //display wire
-    Wire1.begin(18,  19,  400000);  //sensors wire
+    Wire1.begin(18,  19,  static_cast<uint32_t>(400000));  //sensors wire
 
 
     //encoder configuration (used only for menu)
