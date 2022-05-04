@@ -330,7 +330,7 @@ void playTask(void *params) {
 
 void setup(void) {
     //i2c configuration
-    Wire.begin (SDA, SCL, 400000);  //display wire
+    Wire.begin(SDA, SCL, static_cast<uint32_t>(400000));  //display wire
     Wire1.begin(18,  19,  static_cast<uint32_t>(400000));  //sensors wire
 
 
@@ -356,7 +356,7 @@ void setup(void) {
         .sample_rate          = SAMPLE_RATE,
         .bits_per_sample      = I2S_BITS_PER_SAMPLE_16BIT,
         .channel_format       = I2S_CHANNEL_FMT_ONLY_LEFT,
-        .communication_format = I2S_COMM_FORMAT_I2S,
+        .communication_format = I2S_COMM_FORMAT_STAND_I2S, //I2S_COMM_FORMAT_I2S,
         .intr_alloc_flags     = ESP_INTR_FLAG_LEVEL1,
         .dma_buf_count        = 4,
         .dma_buf_len          = 64,
