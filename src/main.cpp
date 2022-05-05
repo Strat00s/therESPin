@@ -1,3 +1,12 @@
+/**
+ * @file main.cpp
+ * @author Lukáš Baštýř (l.bastyr@seznam.cz)
+ * @brief Main theremin file
+ * @version 0.1
+ * @date 11-10-2021
+ * 
+ */
+
 #include <math.h>
 #include <iostream>
 #include <Arduino.h>

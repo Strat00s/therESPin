@@ -1,3 +1,12 @@
+/**
+ * @file entry.cpp
+ * @author Lukáš Baštýř (l.bastyr@seznam.cz)
+ * @brief Entry file
+ * @version 0.1
+ * @date 02-12-2021
+ * 
+ */
+
 #include "entry.hpp"
 
 //Constructors

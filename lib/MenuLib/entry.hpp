@@ -1,3 +1,12 @@
+/**
+ * @file entry.hpp
+ * @author Lukáš Baštýř (l.bastyr@seznam.cz)
+ * @brief Entry header file
+ * @version 0.1
+ * @date 02-12-2021
+ * 
+ */
+
 #include <Arduino.h>
 #include <U8g2lib.h>
 #include <string>

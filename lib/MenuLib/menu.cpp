@@ -1,3 +1,12 @@
+/**
+ * @file menu.cpp
+ * @author Lukáš Baštýř (l.bastyr@seznam.cz)
+ * @brief Menu file
+ * @version 0.1
+ * @date 02-12-2021
+ * 
+ */
+
 #include "menu.hpp"
 
 Menu::Menu(U8G2* u8g2) {

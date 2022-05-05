@@ -1,3 +1,12 @@
+/**
+ * @file menu.hpp
+ * @author Lukáš Baštýř (l.bastyr@seznam.cz)
+ * @brief Menu header file
+ * @version 0.1
+ * @date 02-12-2021
+ * 
+ */
+
 #include "entry.hpp"
 #include <tuple>
 
