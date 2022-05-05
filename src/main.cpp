@@ -80,7 +80,7 @@ int global_range = 0;
 
 
 /*----(IO)----*/
-//sensor configuration rutine
+//sensor configuration helper function
 void registerSensor(int enable_pin, uint8_t address, VL53L0X *sensor) {
     pinMode(enable_pin, OUTPUT);
     digitalWrite(enable_pin, HIGH); //enable sensor on enable_pin
@@ -158,32 +158,6 @@ void sensorTask(void *params) {
     }
 }
 
-//not currently used
-//Entry *startFunction(int *position, bool *select, Entry *entry) {
-//    //running
-//    if (start_data) {
-//        u8g2.clearBuffer();
-//        u8g2.setCursor(10, 20);
-//        u8g2.printf("%f", target_frequency);
-//        u8g2.sendBuffer();
-//    }
-//    else {
-//        u8g2.clearBuffer();
-//        u8g2.setCursor(10, 20);
-//        u8g2.printf("not runnign");
-//        u8g2.sendBuffer();
-//    }
-//    if (*select) {
-//        *select = false;
-//        update_menu = false;
-//        started = false;
-//        //i2s_stop(I2S_NUM_1);
-//        entry->resetToParent(position);
-//        return entry->parent();
-//    }
-//    return entry;
-//}
-
 //menu task for menu setup and execution
 void menuTask(void *params) {
     u8g2.begin();
@@ -196,7 +170,6 @@ void menuTask(void *params) {
 
     //Create menu
     menu.begin();   //start menu
-    //menu.addByName("root",            "Status screen",  "Header", startFunction);
 
     menu.addByName("root", "Start",      toggle, &start_data, {"idle", "running"});
     menu.addByName("root", "Wave",       picker, &target_wave_type, {"sine", "square", "triangle", "custom"});
@@ -228,6 +201,7 @@ void menuTask(void *params) {
     bool running = false;
 
     while(true) {
+        //set modifier
         switch (settings_mod_data) {
             case 0: settings_mod = 1;    break;
             case 1: settings_mod = 10;   break;
@@ -235,6 +209,7 @@ void menuTask(void *params) {
             case 3: settings_mod = 1000; break;
         }
 
+        //stop driver and change entry name
         if (start_data && !running) {
             menu.getEntryByName("Start")->name = "Stop";
             update_menu = true;
